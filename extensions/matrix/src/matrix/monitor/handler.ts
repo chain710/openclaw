@@ -53,7 +53,6 @@ export type MatrixMonitorHandlerParams = {
   logVerboseMessage: (message: string) => void;
   allowFrom: string[];
   roomsConfig: Record<string, MatrixRoomConfig> | undefined;
-  mentionRegexes: ReturnType<PluginRuntime["channel"]["mentions"]["buildMentionRegexes"]>;
   groupPolicy: "open" | "allowlist" | "disabled";
   replyToMode: ReplyToMode;
   threadReplies: "off" | "inbound" | "always";
@@ -137,7 +136,6 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
     logVerboseMessage,
     allowFrom,
     roomsConfig,
-    mentionRegexes,
     groupPolicy,
     replyToMode,
     threadReplies,
@@ -410,6 +408,31 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
         return;
       }
 
+      const messageId = event.event_id ?? "";
+      const replyToEventId = content["m.relates_to"]?.["m.in_reply_to"]?.event_id;
+      const threadRootId = resolveMatrixThreadRootId({ event, content });
+
+      const baseRoute = core.channel.routing.resolveAgentRoute({
+        cfg,
+        channel: "matrix",
+        accountId,
+        peer: {
+          kind: isDirectMessage ? "direct" : "channel",
+          id: isDirectMessage ? senderId : roomId,
+        },
+        // For DMs, pass roomId as parentPeer so the conversation is bindable by room ID
+        // while preserving DM trust semantics (secure 1:1, no group restrictions).
+        parentPeer: isDirectMessage ? { kind: "channel", id: roomId } : undefined,
+      });
+      const baseRouteSession = resolveMatrixBaseRouteSession({
+        buildAgentSessionKey: core.channel.routing.buildAgentSessionKey,
+        baseRoute,
+        isDirectMessage,
+        roomId,
+        accountId,
+      });
+
+      const mentionRegexes = core.channel.mentions.buildMentionRegexes(cfg, baseRoute.agentId);
       const { wasMentioned, hasExplicitMention } = resolveMentions({
         content,
         userId: selfUserId,
@@ -478,38 +501,17 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
         hasControlCommandInMessage;
       const canDetectMention = mentionRegexes.length > 0 || hasExplicitMention;
       if (isRoom && shouldRequireMention && !wasMentioned && !shouldBypassMention) {
-        logger.info("skipping room message", { roomId, reason: "no-mention" });
+        logger.info(
+          `skipping room message room=${roomId} reason=no-mention agent=${baseRoute.agentId}`,
+        );
         return;
       }
 
-      const messageId = event.event_id ?? "";
-      const replyToEventId = content["m.relates_to"]?.["m.in_reply_to"]?.event_id;
-      const threadRootId = resolveMatrixThreadRootId({ event, content });
       const threadTarget = resolveMatrixThreadTarget({
         threadReplies,
         messageId,
         threadRootId,
         isThreadRoot: false, // @vector-im/matrix-bot-sdk doesn't have this info readily available
-      });
-
-      const baseRoute = core.channel.routing.resolveAgentRoute({
-        cfg,
-        channel: "matrix",
-        accountId,
-        peer: {
-          kind: isDirectMessage ? "direct" : "channel",
-          id: isDirectMessage ? senderId : roomId,
-        },
-        // For DMs, pass roomId as parentPeer so the conversation is bindable by room ID
-        // while preserving DM trust semantics (secure 1:1, no group restrictions).
-        parentPeer: isDirectMessage ? { kind: "channel", id: roomId } : undefined,
-      });
-      const baseRouteSession = resolveMatrixBaseRouteSession({
-        buildAgentSessionKey: core.channel.routing.buildAgentSessionKey,
-        baseRoute,
-        isDirectMessage,
-        roomId,
-        accountId,
       });
 
       const route = {
