@@ -1354,7 +1354,12 @@ export async function runSubagentAnnounceFlow(params: {
 
     const taskLabel = params.label || params.task || "task";
     const announceSessionId = childSessionId || "unknown";
-    const findings = childCompletionFindings || reply || "(no output)";
+    const findings =
+      childCompletionFindings ||
+      reply ||
+      (outcome.status === "timeout"
+        ? "Request timed out before a response was generated."
+        : "(no output)");
 
     let requesterIsSubagent = requesterIsInternalSession();
     if (requesterIsSubagent) {
