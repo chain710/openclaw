@@ -1218,7 +1218,11 @@ export async function runSubagentAnnounceFlow(params: {
     const taskLabel = params.label || params.task || "task";
     const subagentName = resolveAgentIdFromSessionKey(params.childSessionKey);
     const announceSessionId = childSessionId || "unknown";
-    const findings = reply || "(no output)";
+    const findings =
+      reply ||
+      (outcome.status === "timeout"
+        ? "Request timed out before a response was generated."
+        : "(no output)");
     let completionMessage = "";
     let triggerMessage = "";
 
