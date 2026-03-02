@@ -1422,7 +1422,8 @@ export async function runEmbeddedPiAgent(
           // Timeout aborts can leave the run without any assistant payloads.
           // Emit an explicit timeout error instead of silently completing, so
           // callers do not lose the turn as an orphaned user message.
-          if (timedOut && !timedOutDuringCompaction && payloads.length === 0) {
+          const hasTextPayloads = payloads.some((p) => p.text?.trim() || p.isError);
+          if (timedOut && !timedOutDuringCompaction && !hasTextPayloads) {
             return {
               payloads: [
                 {
