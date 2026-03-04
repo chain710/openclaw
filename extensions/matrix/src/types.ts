@@ -71,6 +71,8 @@ export type MatrixConfig = {
   groupPolicy?: GroupPolicy;
   /** Allowlist for group senders (matrix user IDs). */
   groupAllowFrom?: Array<string | number>;
+  /** History buffer limit for background messages in rooms. */
+  historyLimit?: number;
   /** Control reply threading when reply tags are present (off|first|all). */
   replyToMode?: ReplyToMode;
   /** How to handle thread replies (off|inbound|always). */

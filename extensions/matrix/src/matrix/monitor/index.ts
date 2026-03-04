@@ -317,6 +317,15 @@ export async function monitorMatrixProvider(opts: MonitorMatrixOpts = {}): Promi
   const dmEnabled = dmConfig?.enabled ?? true;
   const dmPolicyRaw = dmConfig?.policy ?? "pairing";
   const dmPolicy = allowlistOnly && dmPolicyRaw !== "disabled" ? "allowlist" : dmPolicyRaw;
+  const historyLimit = Math.max(
+    0,
+    accountConfig.historyLimit ??
+      (cfg.channels?.matrix as any)?.historyLimit ??
+      (cfg.messages as any)?.groupChat?.historyLimit ??
+      0,
+  );
+  logger.info(`matrix: monitor starting account=${account.accountId} limit=${historyLimit}`);
+  const groupHistories = new Map<string, import("openclaw/plugin-sdk").HistoryEntry[]>();
   const textLimit = core.channel.text.resolveTextChunkLimit(cfg, "matrix");
   const mediaMaxMb = opts.mediaMaxMb ?? accountConfig.mediaMaxMb ?? DEFAULT_MEDIA_MAX_MB;
   const mediaMaxBytes = Math.max(1, mediaMaxMb) * 1024 * 1024;
@@ -345,6 +354,8 @@ export async function monitorMatrixProvider(opts: MonitorMatrixOpts = {}): Promi
     threadReplies,
     dmEnabled,
     dmPolicy,
+    historyLimit,
+    groupHistories,
     textLimit,
     mediaMaxBytes,
     startupMs,

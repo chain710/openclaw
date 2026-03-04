@@ -106,6 +106,8 @@ describe("createMatrixRoomMessageHandler BodyForAgent sender label", () => {
         altAliases: [],
       }),
       getMemberDisplayName: vi.fn().mockResolvedValue("Bu"),
+      historyLimit: 0,
+      groupHistories: new Map(),
       accountId: undefined,
     });
 

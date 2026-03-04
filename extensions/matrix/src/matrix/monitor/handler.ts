@@ -1,13 +1,18 @@
 import type { LocationMessageEventContent, MatrixClient } from "@vector-im/matrix-bot-sdk";
 import {
   DEFAULT_ACCOUNT_ID,
+  DEFAULT_GROUP_HISTORY_LIMIT,
+  buildPendingHistoryContextFromMap,
+  clearHistoryEntriesIfEnabled,
   createScopedPairingAccess,
   createReplyPrefixOptions,
   createTypingCallbacks,
   formatAllowlistMatchMeta,
   logInboundDrop,
   logTypingFailure,
+  recordPendingHistoryEntryIfEnabled,
   resolveControlCommandGate,
+  type HistoryEntry,
   type PluginRuntime,
   type RuntimeEnv,
   type RuntimeLogger,
@@ -55,6 +60,8 @@ export type MatrixMonitorHandlerParams = {
   threadReplies: "off" | "inbound" | "always";
   dmEnabled: boolean;
   dmPolicy: "open" | "pairing" | "allowlist" | "disabled";
+  historyLimit: number;
+  groupHistories: Map<string, HistoryEntry[]>;
   textLimit: number;
   mediaMaxBytes: number;
   startupMs: number;
@@ -88,6 +95,8 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
     threadReplies,
     dmEnabled,
     dmPolicy,
+    historyLimit,
+    groupHistories,
     textLimit,
     mediaMaxBytes,
     startupMs,
@@ -136,16 +145,9 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
       }
       const eventTs = event.origin_server_ts;
       const eventAge = event.unsigned?.age;
-      if (typeof eventTs === "number" && eventTs < startupMs - startupGraceMs) {
-        return;
-      }
-      if (
-        typeof eventTs !== "number" &&
-        typeof eventAge === "number" &&
-        eventAge > startupGraceMs
-      ) {
-        return;
-      }
+      const isHistorical =
+        (typeof eventTs === "number" && eventTs < startupMs - startupGraceMs) ||
+        (typeof eventTs !== "number" && typeof eventAge === "number" && eventAge > startupGraceMs);
 
       const roomInfo = await getRoomInfo(roomId);
       const roomName = roomInfo.name;
@@ -310,28 +312,27 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
           ? content.file
           : undefined;
       const mediaUrl = contentUrl ?? contentFile?.url;
-      if (!rawBody && !mediaUrl) {
-        return;
-      }
 
-      const contentInfo =
-        "info" in content && content.info && typeof content.info === "object"
-          ? (content.info as { mimetype?: string; size?: number })
-          : undefined;
-      const contentType = contentInfo?.mimetype;
-      const contentSize = typeof contentInfo?.size === "number" ? contentInfo.size : undefined;
-      if (mediaUrl?.startsWith("mxc://")) {
-        try {
-          media = await downloadMatrixMedia({
-            client,
-            mxcUrl: mediaUrl,
-            contentType,
-            sizeBytes: contentSize,
-            maxBytes: mediaMaxBytes,
-            file: contentFile,
-          });
-        } catch (err) {
-          logVerboseMessage(`matrix: media download failed: ${String(err)}`);
+      if (!isHistorical && (rawBody || mediaUrl)) {
+        const contentInfo =
+          "info" in content && content.info && typeof content.info === "object"
+            ? (content.info as { mimetype?: string; size?: number })
+            : undefined;
+        const contentType = contentInfo?.mimetype;
+        const contentSize = typeof contentInfo?.size === "number" ? contentInfo.size : undefined;
+        if (mediaUrl?.startsWith("mxc://")) {
+          try {
+            media = await downloadMatrixMedia({
+              client,
+              mxcUrl: mediaUrl,
+              contentType,
+              sizeBytes: contentSize,
+              maxBytes: mediaMaxBytes,
+              file: contentFile,
+            });
+          } catch (err) {
+            logVerboseMessage(`matrix: media download failed: ${String(err)}`);
+          }
         }
       }
 
@@ -354,6 +355,16 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
         },
       });
 
+      const historyKey = isRoom ? roomId : senderId;
+      // Resolve agent-specific history limit if configured
+      const agentConfig = baseRoute.agentId
+        ? (cfg.agents?.list?.find((a: any) => a.id === baseRoute.agentId) as any)
+        : undefined;
+      const agentHistoryLimit =
+        agentConfig?.groupChat?.historyLimit ??
+        (cfg.agents as any)?.defaults?.groupChat?.historyLimit;
+      const finalHistoryLimit = Math.max(0, agentHistoryLimit ?? historyLimit);
+
       const mentionRegexes = core.channel.mentions.buildMentionRegexes(cfg, baseRoute.agentId);
       const { wasMentioned, hasExplicitMention } = resolveMentions({
         content,
@@ -361,6 +372,7 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
         text: bodyText,
         mentionRegexes,
       });
+
       const allowTextCommands = core.channel.commands.shouldHandleTextCommands({
         cfg,
         surface: "matrix",
@@ -404,6 +416,87 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
         });
         return;
       }
+
+      const envelopeOptions = core.channel.reply.resolveEnvelopeFormatOptions(cfg);
+      const envelopeFrom = isDirectMessage ? senderName : (roomName ?? roomId);
+      const textWithId = threadRootId
+        ? `${bodyText}\n[matrix event id: ${messageId} room: ${roomId} thread: ${threadRootId}]`
+        : `${bodyText}\n[matrix event id: ${messageId} room: ${roomId}]`;
+      const storePath = core.channel.session.resolveStorePath(cfg.session?.store, {
+        agentId: baseRoute.agentId,
+      });
+      const previousTimestamp = core.channel.session.readSessionUpdatedAt({
+        storePath,
+        sessionKey: baseRoute.sessionKey, // threadRootId handled in route.sessionKey below
+      });
+
+      const body = core.channel.reply.formatInboundEnvelope({
+        channel: "Matrix",
+        from: envelopeFrom,
+        timestamp: eventTs ?? undefined,
+        previousTimestamp,
+        envelope: envelopeOptions,
+        body: textWithId,
+        chatType: isDirectMessage ? "direct" : "channel",
+        senderLabel,
+      });
+
+      let combinedBody = body;
+      const historyEntries = groupHistories.get(historyKey) ?? [];
+
+      const inboundHistory =
+        isRoom && finalHistoryLimit > 0
+          ? historyEntries.map((h) => ({
+              sender: h.sender,
+              body: h.body,
+              timestamp: h.timestamp,
+            }))
+          : undefined;
+
+      if (isRoom && finalHistoryLimit > 0) {
+        logger.debug(
+          `matrix: recording message to buffer room=${roomId} id=${messageId} sender=${senderId} limit=${finalHistoryLimit} agent=${baseRoute.agentId} isHistorical=${isHistorical}`,
+        );
+        recordPendingHistoryEntryIfEnabled({
+          historyMap: groupHistories,
+          historyKey,
+          limit: finalHistoryLimit,
+          entry: {
+            body: bodyText,
+            sender: senderLabel,
+            timestamp: eventTs ?? undefined,
+            messageId,
+          },
+        });
+      }
+
+      if (isHistorical) {
+        return;
+      }
+
+      if (isRoom && finalHistoryLimit > 0) {
+        logger.debug(
+          `matrix: building context with ${inboundHistory?.length ?? 0} history entries room=${roomId}`,
+        );
+        combinedBody = buildPendingHistoryContextFromMap({
+          historyMap: groupHistories,
+          historyKey,
+          limit: finalHistoryLimit,
+          currentMessage: body,
+          formatEntry: (h) =>
+            core.channel.reply.formatInboundEnvelope({
+              channel: "Matrix",
+              from: envelopeFrom,
+              timestamp: h.timestamp,
+              body:
+                h.body + (h.messageId ? `\n[matrix event id: ${h.messageId} room: ${roomId}]` : ""),
+              chatType: "channel",
+              senderLabel: h.sender,
+              envelope: envelopeOptions,
+            }),
+        });
+      }
+
       const shouldRequireMention = isRoom
         ? roomConfig?.autoReply === true
           ? false
@@ -413,6 +506,7 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
               ? roomConfig?.requireMention
               : true
         : false;
+
       const shouldBypassMention =
         allowTextCommands &&
         isRoom &&
@@ -421,9 +515,11 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
         !hasExplicitMention &&
         commandAuthorized &&
         hasControlCommandInMessage;
+
       const canDetectMention = mentionRegexes.length > 0 || hasExplicitMention;
+
       if (isRoom && shouldRequireMention && !wasMentioned && !shouldBypassMention) {
-        logger.info(
+        logger.debug(
           `skipping room message room=${roomId} reason=no-mention agent=${baseRoute.agentId}`,
         );
         return;
@@ -449,9 +545,7 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
 
       if (threadRootId) {
         const existingSession = core.channel.session.readSessionUpdatedAt({
-          storePath: core.channel.session.resolveStorePath(cfg.session?.store, {
-            agentId: baseRoute.agentId,
-          }),
+          storePath,
           sessionKey: route.sessionKey,
         });
 
@@ -482,32 +576,10 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
         }
       }
 
-      const envelopeFrom = isDirectMessage ? senderName : (roomName ?? roomId);
-      const textWithId = threadRootId
-        ? `${bodyText}\n[matrix event id: ${messageId} room: ${roomId} thread: ${threadRootId}]`
-        : `${bodyText}\n[matrix event id: ${messageId} room: ${roomId}]`;
-      const storePath = core.channel.session.resolveStorePath(cfg.session?.store, {
-        agentId: route.agentId,
-      });
-      const envelopeOptions = core.channel.reply.resolveEnvelopeFormatOptions(cfg);
-      const previousTimestamp = core.channel.session.readSessionUpdatedAt({
-        storePath,
-        sessionKey: route.sessionKey,
-      });
-      const body = core.channel.reply.formatInboundEnvelope({
-        channel: "Matrix",
-        from: envelopeFrom,
-        timestamp: eventTs ?? undefined,
-        previousTimestamp,
-        envelope: envelopeOptions,
-        body: textWithId,
-        chatType: isDirectMessage ? "direct" : "channel",
-        senderLabel,
-      });
-
       const groupSystemPrompt = roomConfig?.systemPrompt?.trim() || undefined;
       const ctxPayload = core.channel.reply.finalizeInboundContext({
-        Body: body,
+        Body: combinedBody,
+        InboundHistory: inboundHistory,
         BodyForAgent: resolveMatrixBodyForAgent({
           isDirectMessage,
           bodyText,
@@ -679,6 +751,16 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
       }
       didSendReply = true;
       const finalCount = counts.final;
+
+      if (isRoom && finalHistoryLimit > 0) {
+        logger.debug(`matrix: clearing history after successful reply room=${roomId}`);
+        clearHistoryEntriesIfEnabled({
+          historyMap: groupHistories,
+          historyKey,
+          limit: finalHistoryLimit,
+        });
+      }
+
       logVerboseMessage(
         `matrix: delivered ${finalCount} reply${finalCount === 1 ? "" : "ies"} to ${replyTarget}`,
       );
