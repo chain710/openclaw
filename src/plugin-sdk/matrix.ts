@@ -53,6 +53,7 @@ export type {
 } from "../channels/plugins/types.js";
 export type { ChannelPlugin } from "../channels/plugins/types.plugin.js";
 export { createReplyPrefixOptions } from "../channels/reply-prefix.js";
+export { recordInboundSession } from "../channels/session.js";
 export { createTypingCallbacks } from "../channels/typing.js";
 export type { OpenClawConfig } from "../config/config.js";
 export {
@@ -94,3 +95,12 @@ export { formatResolvedUnresolvedNote } from "./resolution-notes.js";
 export { runPluginCommandWithTimeout } from "./run-command.js";
 export { createLoggerBackedRuntime } from "./runtime.js";
 export { buildProbeChannelStatusSummary } from "./status-helpers.js";
+export {
+  buildPendingHistoryContextFromMap,
+  clearHistoryEntries,
+  clearHistoryEntriesIfEnabled,
+  DEFAULT_GROUP_HISTORY_LIMIT,
+  recordPendingHistoryEntry,
+  recordPendingHistoryEntryIfEnabled,
+} from "../auto-reply/reply/history.js";
+export type { HistoryEntry } from "../auto-reply/reply/history.js";
