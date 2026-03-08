@@ -67,7 +67,9 @@ import type { GatewayRequestHandlerOptions, GatewayRequestHandlers } from "./typ
 
 const RESET_COMMAND_RE = /^\/(new|reset)(?:\s+([\s\S]*))?$/i;
 
-function resolveSenderIsOwnerFromClient(client: GatewayRequestHandlerOptions["client"]): boolean {
+export function resolveSenderIsOwnerFromClient(
+  client: GatewayRequestHandlerOptions["client"],
+): boolean {
   const scopes = Array.isArray(client?.connect?.scopes) ? client.connect.scopes : [];
   return scopes.includes(ADMIN_SCOPE);
 }
