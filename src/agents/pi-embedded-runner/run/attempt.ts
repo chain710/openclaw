@@ -549,7 +549,7 @@ export async function runEmbeddedAttempt(
   const runAbortController = new AbortController();
 
   log.debug(
-    `embedded run start: runId=${params.runId} sessionId=${params.sessionId} provider=${params.provider} model=${params.modelId} thinking=${params.thinkLevel} messageChannel=${params.messageChannel ?? params.messageProvider ?? "unknown"}`,
+    `embedded run start: runId=${params.runId} sessionId=${params.sessionId} provider=${params.provider} model=${params.modelId} thinking=${params.thinkLevel} messageChannel=${params.messageChannel ?? params.messageProvider ?? "unknown"} senderIsOwner=${params.senderIsOwner}`,
   );
 
   await fs.mkdir(resolvedWorkspace, { recursive: true });
