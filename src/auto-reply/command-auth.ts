@@ -341,7 +341,12 @@ export function resolveCommandAuthorization(params: {
   const senderId = matchedSender ?? senderCandidates[0];
 
   const enforceOwner = Boolean(dock?.commands?.enforceOwnerForCommands);
-  const senderIsOwner = Boolean(matchedSender);
+  // Respect explicit ownership flags from gateway/provider context, scope-based admin role, or wildcard config.
+  const senderIsOwner =
+    ctx.SenderIsOwner === true ||
+    ctx.GatewayClientScopes?.includes("operator.admin") === true ||
+    ownerAllowAll ||
+    Boolean(matchedSender);
   const ownerAllowlistConfigured = ownerAllowAll || explicitOwners.length > 0;
   const requireOwner = enforceOwner || ownerAllowlistConfigured;
   const isOwnerForCommands = !requireOwner
