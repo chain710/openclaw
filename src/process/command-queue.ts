@@ -66,6 +66,8 @@ function getLaneState(lane: string): LaneState {
     generation: 0,
   };
   lanes.set(lane, created);
+  const stack = new Error().stack?.split("\n").slice(2, 6).join(" <- ");
+  diag.debug(`getLaneState: created lane=${lane} stack=${stack}`);
   return created;
 }
 
@@ -163,7 +165,10 @@ export function setCommandLaneConcurrency(lane: string, maxConcurrent: number) {
   const cleaned = lane.trim() || CommandLane.Main;
   const state = getLaneState(cleaned);
   state.maxConcurrent = Math.max(1, Math.floor(maxConcurrent));
-  diag.debug(`setCommandLaneConcurrency: lane=${cleaned} maxConcurrent=${state.maxConcurrent}`);
+  const stack = new Error().stack?.split("\n").slice(2, 6).join(" <- ");
+  diag.debug(
+    `setCommandLaneConcurrency: lane=${cleaned} maxConcurrent=${state.maxConcurrent} stack=${stack}`,
+  );
   drainLane(cleaned);
 }
 
