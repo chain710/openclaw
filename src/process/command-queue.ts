@@ -49,7 +49,11 @@ type LaneState = {
   generation: number;
 };
 
-const lanes = new Map<string, LaneState>();
+const GLOBAL_LANES_KEY = Symbol.for("openclaw.command-lanes");
+const globalObj = globalThis as Record<string | symbol, unknown>;
+const lanes: Map<string, LaneState> =
+  (globalObj[GLOBAL_LANES_KEY] as Map<string, LaneState>) || new Map<string, LaneState>();
+globalObj[GLOBAL_LANES_KEY] = lanes;
 let nextTaskId = 1;
 
 function getLaneState(lane: string): LaneState {
