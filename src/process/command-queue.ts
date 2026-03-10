@@ -108,6 +108,9 @@ function drainLane(lane: string) {
         const taskId = nextTaskId++;
         const taskGeneration = state.generation;
         state.activeTaskIds.add(taskId);
+        diag.debug(
+          `lane slot occupied: lane=${lane} taskId=${taskId} activeCount=${state.activeTaskIds.size} max=${state.maxConcurrent}`,
+        );
         void (async () => {
           const startTime = Date.now();
           try {
@@ -135,6 +138,11 @@ function drainLane(lane: string) {
           }
         })();
       }
+      if (state.queue.length > 0 && state.activeTaskIds.size >= state.maxConcurrent) {
+        diag.debug(
+          `lane full: lane=${lane} active=${state.activeTaskIds.size} max=${state.maxConcurrent} queued=${state.queue.length}`,
+        );
+      }
     } finally {
       state.draining = false;
     }
@@ -155,6 +163,7 @@ export function setCommandLaneConcurrency(lane: string, maxConcurrent: number) {
   const cleaned = lane.trim() || CommandLane.Main;
   const state = getLaneState(cleaned);
   state.maxConcurrent = Math.max(1, Math.floor(maxConcurrent));
+  diag.debug(`setCommandLaneConcurrency: lane=${cleaned} maxConcurrent=${state.maxConcurrent}`);
   drainLane(cleaned);
 }
 
