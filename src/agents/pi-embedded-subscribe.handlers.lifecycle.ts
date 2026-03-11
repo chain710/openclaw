@@ -8,6 +8,7 @@ import {
 import { classifyFailoverReason, formatAssistantErrorText } from "./pi-embedded-helpers.js";
 import type { EmbeddedPiSubscribeContext } from "./pi-embedded-subscribe.handlers.types.js";
 import { isAssistantMessage } from "./pi-embedded-utils.js";
+import { redactRunIdentifier } from "./workspace-run.js";
 
 export {
   handleAutoCompactionEnd,
@@ -15,7 +16,11 @@ export {
 } from "./pi-embedded-subscribe.handlers.compaction.js";
 
 export function handleAgentStart(ctx: EmbeddedPiSubscribeContext) {
-  ctx.log.debug(`embedded run agent start: runId=${ctx.params.runId}`);
+  const agentId = ctx.params.agentId ?? "unknown";
+  const redactedSessionKey = redactRunIdentifier(ctx.params.sessionKey);
+  ctx.log.debug(
+    `embedded run agent start: agentId=${agentId} sessionKey=${redactedSessionKey} runId=${ctx.params.runId}`,
+  );
   emitAgentEvent({
     runId: ctx.params.runId,
     stream: "lifecycle",
@@ -33,6 +38,8 @@ export function handleAgentStart(ctx: EmbeddedPiSubscribeContext) {
 export function handleAgentEnd(ctx: EmbeddedPiSubscribeContext) {
   const lastAssistant = ctx.state.lastAssistant;
   const isError = isAssistantMessage(lastAssistant) && lastAssistant.stopReason === "error";
+  const agentId = ctx.params.agentId ?? "unknown";
+  const redactedSessionKey = redactRunIdentifier(ctx.params.sessionKey);
 
   if (isError && lastAssistant) {
     const friendlyError = formatAssistantErrorText(lastAssistant, {
@@ -44,15 +51,19 @@ export function handleAgentEnd(ctx: EmbeddedPiSubscribeContext) {
     const rawError = lastAssistant.errorMessage?.trim();
     const failoverReason = classifyFailoverReason(rawError ?? "");
     const errorText = (friendlyError || lastAssistant.errorMessage || "LLM request failed.").trim();
+
     const observedError = buildApiErrorObservationFields(rawError);
     const safeErrorText =
       buildTextObservationFields(errorText).textPreview ?? "LLM request failed.";
     const safeRunId = sanitizeForConsole(ctx.params.runId) ?? "-";
     const safeModel = sanitizeForConsole(lastAssistant.model) ?? "unknown";
     const safeProvider = sanitizeForConsole(lastAssistant.provider) ?? "unknown";
+
     ctx.log.warn("embedded run agent end", {
       event: "embedded_run_agent_end",
       tags: ["error_handling", "lifecycle", "agent_end", "assistant_error"],
+      agentId,
+      sessionKey: redactedSessionKey,
       runId: ctx.params.runId,
       isError: true,
       error: safeErrorText,
@@ -60,7 +71,7 @@ export function handleAgentEnd(ctx: EmbeddedPiSubscribeContext) {
       model: lastAssistant.model,
       provider: lastAssistant.provider,
       ...observedError,
-      consoleMessage: `embedded run agent end: runId=${safeRunId} isError=true model=${safeModel} provider=${safeProvider} error=${safeErrorText}`,
+      consoleMessage: `embedded run agent end: agentId=${agentId} sessionKey=${redactedSessionKey} runId=${safeRunId} isError=true model=${safeModel} provider=${safeProvider} error=${safeErrorText}`,
     });
     emitAgentEvent({
       runId: ctx.params.runId,
@@ -79,7 +90,9 @@ export function handleAgentEnd(ctx: EmbeddedPiSubscribeContext) {
       },
     });
   } else {
-    ctx.log.debug(`embedded run agent end: runId=${ctx.params.runId} isError=${isError}`);
+    ctx.log.debug(
+      `embedded run agent end: agentId=${agentId} sessionKey=${redactedSessionKey} runId=${ctx.params.runId} isError=${isError}`,
+    );
     emitAgentEvent({
       runId: ctx.params.runId,
       stream: "lifecycle",

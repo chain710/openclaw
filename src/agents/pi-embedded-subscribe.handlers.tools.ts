@@ -25,6 +25,7 @@ import { inferToolMetaFromArgs } from "./pi-embedded-utils.js";
 import { consumeAdjustedParamsForToolCall } from "./pi-tools.before-tool-call.js";
 import { buildToolMutationState, isSameToolMutationAction } from "./tool-mutation.js";
 import { normalizeToolName } from "./tool-policy.js";
+import { redactRunIdentifier } from "./workspace-run.js";
 
 type ToolStartRecord = {
   startTime: number;
@@ -333,8 +334,10 @@ export async function handleToolExecutionStart(
 
   const meta = extendExecMeta(toolName, args, inferToolMetaFromArgs(toolName, args));
   ctx.state.toolMetaById.set(toolCallId, buildToolCallSummary(toolName, args, meta));
+  const agentId = ctx.params.agentId ?? "unknown";
+  const redactedSessionKey = redactRunIdentifier(ctx.params.sessionKey);
   ctx.log.debug(
-    `embedded run tool start: runId=${ctx.params.runId} tool=${toolName} toolCallId=${toolCallId}`,
+    `embedded run tool start: agentId=${agentId} sessionKey=${redactedSessionKey} runId=${ctx.params.runId} tool=${toolName} toolCallId=${toolCallId}`,
   );
 
   const shouldEmitToolEvents = ctx.shouldEmitToolResult();
@@ -433,6 +436,8 @@ export async function handleToolExecutionEnd(
   const runId = ctx.params.runId;
   const isError = Boolean(evt.isError);
   const result = evt.result;
+  const agentId = ctx.params.agentId ?? "unknown";
+  const redactedSessionKey = redactRunIdentifier(ctx.params.sessionKey);
   const isToolError = isError || isToolResultError(result);
   const sanitizedResult = sanitizeToolResult(result);
   const toolStartKey = buildToolStartKey(runId, toolCallId);
@@ -542,7 +547,7 @@ export async function handleToolExecutionEnd(
   });
 
   ctx.log.debug(
-    `embedded run tool end: runId=${ctx.params.runId} tool=${toolName} toolCallId=${toolCallId}`,
+    `embedded run tool end: agentId=${agentId} sessionKey=${redactedSessionKey} runId=${ctx.params.runId} tool=${toolName} toolCallId=${toolCallId}`,
   );
 
   await emitToolResultOutput({ ctx, toolName, meta, isToolError, result, sanitizedResult });

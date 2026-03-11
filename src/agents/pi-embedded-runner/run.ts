@@ -1550,7 +1550,7 @@ export async function runEmbeddedPiAgent(
           }
 
           log.debug(
-            `embedded run done: runId=${params.runId} sessionId=${params.sessionId} durationMs=${Date.now() - started} aborted=${aborted}`,
+            `embedded run done: agentId=${params.agentId ?? "unknown"} sessionKey=${redactRunIdentifier(params.sessionKey)} runId=${params.runId} sessionId=${params.sessionId} durationMs=${Date.now() - started} aborted=${aborted}`,
           );
           if (lastProfileId) {
             await markAuthProfileGood({

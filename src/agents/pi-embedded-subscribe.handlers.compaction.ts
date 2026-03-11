@@ -3,11 +3,16 @@ import { emitAgentEvent } from "../infra/agent-events.js";
 import { getGlobalHookRunner } from "../plugins/hook-runner-global.js";
 import type { EmbeddedPiSubscribeContext } from "./pi-embedded-subscribe.handlers.types.js";
 import { makeZeroUsageSnapshot } from "./usage.js";
+import { redactRunIdentifier } from "./workspace-run.js";
 
 export function handleAutoCompactionStart(ctx: EmbeddedPiSubscribeContext) {
   ctx.state.compactionInFlight = true;
   ctx.ensureCompactionPromise();
-  ctx.log.debug(`embedded run compaction start: runId=${ctx.params.runId}`);
+  const agentId = ctx.params.agentId ?? "unknown";
+  const redactedSessionKey = redactRunIdentifier(ctx.params.sessionKey);
+  ctx.log.debug(
+    `embedded run compaction start: agentId=${agentId} sessionKey=${redactedSessionKey} runId=${ctx.params.runId}`,
+  );
   emitAgentEvent({
     runId: ctx.params.runId,
     stream: "compaction",
@@ -56,7 +61,11 @@ export function handleAutoCompactionEnd(
   if (willRetry) {
     ctx.noteCompactionRetry();
     ctx.resetForCompactionRetry();
-    ctx.log.debug(`embedded run compaction retry: runId=${ctx.params.runId}`);
+    const agentId = ctx.params.agentId ?? "unknown";
+    const redactedSessionKey = redactRunIdentifier(ctx.params.sessionKey);
+    ctx.log.debug(
+      `embedded run compaction retry: agentId=${agentId} sessionKey=${redactedSessionKey} runId=${ctx.params.runId}`,
+    );
   } else {
     ctx.maybeResolveCompactionWait();
     clearStaleAssistantUsageOnSessionMessages(ctx);

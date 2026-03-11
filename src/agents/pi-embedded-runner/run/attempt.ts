@@ -93,6 +93,7 @@ import { sanitizeToolCallIdsForCloudCodeAssist } from "../../tool-call-id.js";
 import { resolveEffectiveToolFsWorkspaceOnly } from "../../tool-fs-policy.js";
 import { normalizeToolName } from "../../tool-policy.js";
 import { resolveTranscriptPolicy } from "../../transcript-policy.js";
+import { redactRunIdentifier } from "../../workspace-run.js";
 import { DEFAULT_BOOTSTRAP_FILENAME } from "../../workspace.js";
 import { isRunnerAbortError } from "../abort.js";
 import { appendCacheTtlTimestamp, isCacheTtlEligibleProvider } from "../cache-ttl.js";
@@ -1377,8 +1378,11 @@ export async function runEmbeddedAttempt(
   ensureGlobalUndiciEnvProxyDispatcher();
   ensureGlobalUndiciStreamTimeouts();
 
+  const redactedSessionKey = redactRunIdentifier(params.sessionKey);
+  const agentId = params.agentId ?? "unknown";
+
   log.debug(
-    `embedded run start: runId=${params.runId} sessionId=${params.sessionId} provider=${params.provider} model=${params.modelId} thinking=${params.thinkLevel} messageChannel=${params.messageChannel ?? params.messageProvider ?? "unknown"} senderIsOwner=${params.senderIsOwner}`,
+    `embedded run start: agentId=${agentId} sessionKey=${redactedSessionKey} runId=${params.runId} sessionId=${params.sessionId} provider=${params.provider} model=${params.modelId} thinking=${params.thinkLevel} messageChannel=${params.messageChannel ?? params.messageProvider ?? "unknown"} senderIsOwner=${params.senderIsOwner}`,
   );
 
   await fs.mkdir(resolvedWorkspace, { recursive: true });
@@ -2241,7 +2245,7 @@ export async function runEmbeddedAttempt(
         () => {
           if (!isProbeSession) {
             log.warn(
-              `embedded run timeout: runId=${params.runId} sessionId=${params.sessionId} timeoutMs=${params.timeoutMs}`,
+              `embedded run timeout: agentId=${agentId} sessionKey=${redactedSessionKey} runId=${params.runId} sessionId=${params.sessionId} timeoutMs=${params.timeoutMs}`,
             );
           }
           if (
@@ -2261,7 +2265,7 @@ export async function runEmbeddedAttempt(
               }
               if (!isProbeSession) {
                 log.warn(
-                  `embedded run abort still streaming: runId=${params.runId} sessionId=${params.sessionId}`,
+                  `embedded run abort still streaming: agentId=${agentId} sessionKey=${redactedSessionKey} runId=${params.runId} sessionId=${params.sessionId}`,
                 );
               }
             }, 10_000);
@@ -2354,7 +2358,9 @@ export async function runEmbeddedAttempt(
           }
         }
 
-        log.debug(`embedded run prompt start: runId=${params.runId} sessionId=${params.sessionId}`);
+        log.debug(
+          `embedded run prompt start: agentId=${agentId} sessionKey=${redactedSessionKey} runId=${params.runId} sessionId=${params.sessionId}`,
+        );
         cacheTrace?.recordStage("prompt:before", {
           prompt: effectivePrompt,
           messages: activeSession.messages,
@@ -2486,7 +2492,7 @@ export async function runEmbeddedAttempt(
           }
         } finally {
           log.debug(
-            `embedded run prompt end: runId=${params.runId} sessionId=${params.sessionId} durationMs=${Date.now() - promptStartedAt}`,
+            `embedded run prompt end: agentId=${agentId} sessionKey=${redactedSessionKey} runId=${params.runId} sessionId=${params.sessionId} durationMs=${Date.now() - promptStartedAt}`,
           );
         }
 
