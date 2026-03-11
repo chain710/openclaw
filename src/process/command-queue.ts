@@ -115,6 +115,9 @@ function drainLane(lane: string) {
         const taskId = queueState.nextTaskId++;
         const taskGeneration = state.generation;
         state.activeTaskIds.add(taskId);
+        diag.debug(
+          `lane slot occupied: lane=${lane} taskId=${taskId} activeCount=${state.activeTaskIds.size} max=${state.maxConcurrent}`,
+        );
         void (async () => {
           const startTime = Date.now();
           try {
@@ -141,6 +144,11 @@ function drainLane(lane: string) {
             entry.reject(err);
           }
         })();
+      }
+      if (state.queue.length > 0 && state.activeTaskIds.size >= state.maxConcurrent) {
+        diag.debug(
+          `lane full: lane=${lane} active=${state.activeTaskIds.size} max=${state.maxConcurrent} queued=${state.queue.length}`,
+        );
       }
     } finally {
       state.draining = false;
