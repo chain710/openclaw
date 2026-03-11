@@ -465,10 +465,16 @@ async function completeSubagentRun(params: {
   let mutated = false;
   // If a late lifecycle completion arrives after an earlier kill marker, allow
   // completion cleanup/announce to run instead of staying permanently suppressed.
+  const isResurrectedAfterTimeout =
+    entry.outcome?.status === "timeout" &&
+    params.outcome.status !== "timeout" &&
+    (entry.cleanupHandled || typeof entry.cleanupCompletedAt === "number");
+
   if (
-    params.reason === SUBAGENT_ENDED_REASON_COMPLETE &&
-    entry.suppressAnnounceReason === "killed" &&
-    (entry.cleanupHandled || typeof entry.cleanupCompletedAt === "number")
+    (params.reason === SUBAGENT_ENDED_REASON_COMPLETE &&
+      entry.suppressAnnounceReason === "killed" &&
+      (entry.cleanupHandled || typeof entry.cleanupCompletedAt === "number")) ||
+    isResurrectedAfterTimeout
   ) {
     entry.suppressAnnounceReason = undefined;
     entry.cleanupHandled = false;

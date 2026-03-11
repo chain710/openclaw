@@ -1,10 +1,15 @@
 export type AnnounceIdFromChildRunParams = {
   childSessionKey: string;
   childRunId: string;
+  outcome?: { status: string };
 };
 
 export function buildAnnounceIdFromChildRun(params: AnnounceIdFromChildRunParams): string {
-  return `v1:${params.childSessionKey}:${params.childRunId}`;
+  const base = `v1:${params.childSessionKey}:${params.childRunId}`;
+  if (params.outcome?.status && params.outcome.status !== "ok") {
+    return `${base}:${params.outcome.status}`;
+  }
+  return base;
 }
 
 export function buildAnnounceIdempotencyKey(announceId: string): string {
