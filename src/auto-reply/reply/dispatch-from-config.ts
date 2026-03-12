@@ -355,11 +355,15 @@ export async function dispatchReplyFromConfig(params: {
       markIdle,
     });
     if (acpDispatch) {
-      if (params.replyOptions?.deliveryPolicy === "broadcast") {
+      const deliveryPolicy = params.replyOptions?.deliveryPolicy ?? "exclusive";
+      if (deliveryPolicy === "broadcast") {
         logVerbose(
           `acp-dispatch: session=${acpDispatchSessionKey} outcome=broadcast_continued (broadcast mode enabled)`,
         );
       } else {
+        logVerbose(
+          `acp-dispatch: session=${acpDispatchSessionKey} outcome=exclusive_skip_local (acp active, broadcast disabled)`,
+        );
         return acpDispatch;
       }
     }

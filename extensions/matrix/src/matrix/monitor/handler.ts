@@ -840,7 +840,7 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
       }
 
       logVerboseMessage(
-        `matrix: delivered ${finalCount} reply${finalCount === 1 ? "" : "ies"} to ${replyTarget}`,
+        `matrix: delivered ${finalCount} reply${finalCount === 1 ? "" : "ies"} to ${replyTarget} (broadcast=${broadcastMode})`,
       );
     } catch (err) {
       runtime.error?.(`matrix handler failed: ${String(err)}`);
