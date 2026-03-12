@@ -165,11 +165,11 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
     channel: "matrix",
     accountId: resolvedAccountId,
   });
-  const accountConfig = resolveMatrixAccountConfig({ cfg, accountId: resolvedAccountId });
-  const broadcastMode = accountConfig?.broadcast === true;
-
   return async (roomId: string, event: MatrixRawEvent) => {
     try {
+      const accountConfig = resolveMatrixAccountConfig({ cfg, accountId: resolvedAccountId });
+      const broadcastMode = accountConfig?.broadcast === true;
+
       const eventType = event.type;
       if (eventType === EventType.RoomMessageEncrypted) {
         // Encrypted messages are decrypted automatically by @vector-im/matrix-bot-sdk with crypto enabled

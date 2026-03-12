@@ -20,6 +20,11 @@ export type TypingPolicy =
   | "internal_webchat"
   | "heartbeat";
 
+/**
+ * Inbound delivery policy.
+ * - `exclusive`: Only deliver locally if no ACP client (like ControlWeb) is active. (Default)
+ * - `broadcast`: Always deliver locally even if an ACP client is active.
+ */
 export type DeliveryPolicy = "exclusive" | "broadcast";
 
 export type GetReplyOptions = {

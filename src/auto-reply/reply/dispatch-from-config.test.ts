@@ -1775,4 +1775,110 @@ describe("dispatchReplyFromConfig", () => {
     expect(blockReplySentTexts).not.toContain("Reasoning:\n_thinking..._");
     expect(blockReplySentTexts).toContain("The answer is 42");
   });
+
+  describe("deliveryPolicy", () => {
+    it("skips local reply dispatch when ACP is active and policy is exclusive (default)", async () => {
+      setNoAbort();
+      const runtime = createAcpRuntime([{ type: "done" }]);
+      acpMocks.readAcpSessionEntry.mockReturnValue({
+        sessionKey: "agent:codex-acp:session-1",
+        storeSessionKey: "agent:codex-acp:session-1",
+        cfg: {},
+        storePath: "/tmp/mock-sessions.json",
+        entry: {},
+        acp: {
+          backend: "acpx",
+          agent: "codex",
+          runtimeSessionName: "runtime:1",
+          mode: "persistent",
+          state: "idle",
+          lastActivityAt: Date.now(),
+        },
+      });
+      acpMocks.requireAcpRuntimeBackend.mockReturnValue({
+        id: "acpx",
+        runtime,
+      });
+
+      const cfg = {
+        acp: {
+          enabled: true,
+          dispatch: { enabled: true },
+        },
+      } as OpenClawConfig;
+      const dispatcher = createDispatcher();
+      const ctx = buildTestCtx({
+        Provider: "discord",
+        Surface: "discord",
+        SessionKey: "agent:codex-acp:session-1",
+        BodyForAgent: "hello acp",
+      });
+      const replyResolver = vi.fn(async () => ({ text: "local fallback" }) as ReplyPayload);
+
+      await dispatchReplyFromConfig({
+        ctx,
+        cfg,
+        dispatcher,
+        replyResolver,
+        replyOptions: { deliveryPolicy: "exclusive" },
+      });
+
+      expect(runtime.runTurn).toHaveBeenCalledTimes(1);
+      expect(replyResolver).not.toHaveBeenCalled();
+      expect(dispatcher.sendFinalReply).not.toHaveBeenCalled();
+    });
+
+    it("continues with local reply dispatch even when ACP is active if policy is broadcast", async () => {
+      setNoAbort();
+      const runtime = createAcpRuntime([{ type: "done" }]);
+      acpMocks.readAcpSessionEntry.mockReturnValue({
+        sessionKey: "agent:codex-acp:session-1",
+        storeSessionKey: "agent:codex-acp:session-1",
+        cfg: {},
+        storePath: "/tmp/mock-sessions.json",
+        entry: {},
+        acp: {
+          backend: "acpx",
+          agent: "codex",
+          runtimeSessionName: "runtime:1",
+          mode: "persistent",
+          state: "idle",
+          lastActivityAt: Date.now(),
+        },
+      });
+      acpMocks.requireAcpRuntimeBackend.mockReturnValue({
+        id: "acpx",
+        runtime,
+      });
+
+      const cfg = {
+        acp: {
+          enabled: true,
+          dispatch: { enabled: true },
+        },
+      } as OpenClawConfig;
+      const dispatcher = createDispatcher();
+      const ctx = buildTestCtx({
+        Provider: "discord",
+        Surface: "discord",
+        SessionKey: "agent:codex-acp:session-1",
+        BodyForAgent: "hello acp",
+      });
+      const replyResolver = vi.fn(async () => ({ text: "local broadcast" }) as ReplyPayload);
+
+      await dispatchReplyFromConfig({
+        ctx,
+        cfg,
+        dispatcher,
+        replyResolver,
+        replyOptions: { deliveryPolicy: "broadcast" },
+      });
+
+      expect(runtime.runTurn).toHaveBeenCalledTimes(1);
+      expect(replyResolver).toHaveBeenCalledTimes(1);
+      expect(dispatcher.sendFinalReply).toHaveBeenCalledWith(
+        expect.objectContaining({ text: "local broadcast" }),
+      );
+    });
+  });
 });

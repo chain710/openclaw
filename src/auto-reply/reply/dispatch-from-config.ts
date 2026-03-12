@@ -357,7 +357,7 @@ export async function dispatchReplyFromConfig(params: {
     if (acpDispatch) {
       if (params.replyOptions?.deliveryPolicy === "broadcast") {
         logVerbose(
-          `acp-dispatch: session=${acpDispatchSessionKey} outcome=ok (broadcast mode enabled)`,
+          `acp-dispatch: session=${acpDispatchSessionKey} outcome=broadcast_continued (broadcast mode enabled)`,
         );
       } else {
         return acpDispatch;
