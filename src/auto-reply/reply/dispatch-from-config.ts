@@ -355,7 +355,13 @@ export async function dispatchReplyFromConfig(params: {
       markIdle,
     });
     if (acpDispatch) {
-      return acpDispatch;
+      if (params.replyOptions?.deliveryPolicy === "broadcast") {
+        logVerbose(
+          `acp-dispatch: session=${acpDispatchSessionKey} outcome=ok (broadcast mode enabled)`,
+        );
+      } else {
+        return acpDispatch;
+      }
     }
 
     // Track accumulated block text for TTS generation after streaming completes.

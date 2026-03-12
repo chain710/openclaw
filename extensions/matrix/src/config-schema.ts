@@ -51,6 +51,10 @@ export const MatrixConfigSchema = z.object({
   allowlistOnly: z.boolean().optional(),
   groupPolicy: z.enum(["open", "disabled", "allowlist"]).optional(),
   historyLimit: z.number().int().min(0).optional(),
+  broadcast: z
+    .boolean()
+    .optional()
+    .describe("If true, deliver to Matrix even if an ACP client (like ControlWeb) is active."),
   replyToMode: z.enum(["off", "first", "all"]).optional(),
   threadReplies: z.enum(["off", "inbound", "always"]).optional(),
   textChunkLimit: z.number().optional(),

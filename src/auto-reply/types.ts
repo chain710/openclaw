@@ -20,11 +20,15 @@ export type TypingPolicy =
   | "internal_webchat"
   | "heartbeat";
 
+export type DeliveryPolicy = "exclusive" | "broadcast";
+
 export type GetReplyOptions = {
   /** Override run id for agent events (defaults to random UUID). */
   runId?: string;
   /** Abort signal for the underlying agent run. */
   abortSignal?: AbortSignal;
+  /** Inbound delivery mode (exclusive vs broadcast). */
+  deliveryPolicy?: DeliveryPolicy;
   /** Optional inbound images (used for webchat attachments). */
   images?: ImageContent[];
   /** Notifies when an agent run actually starts (useful for webchat command handling). */

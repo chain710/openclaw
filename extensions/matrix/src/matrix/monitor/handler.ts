@@ -20,6 +20,7 @@ import {
   type RuntimeLogger,
 } from "openclaw/plugin-sdk/matrix";
 import type { CoreConfig, MatrixRoomConfig, ReplyToMode } from "../../types.js";
+import { resolveMatrixAccountConfig } from "../accounts.js";
 import { fetchEventSummary } from "../actions/summary.js";
 import {
   formatPollAsText,
@@ -164,6 +165,8 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
     channel: "matrix",
     accountId: resolvedAccountId,
   });
+  const accountConfig = resolveMatrixAccountConfig({ cfg, accountId: resolvedAccountId });
+  const broadcastMode = accountConfig?.broadcast === true;
 
   return async (roomId: string, event: MatrixRawEvent) => {
     try {
@@ -816,6 +819,7 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
         },
         replyOptions: {
           ...replyOptions,
+          deliveryPolicy: broadcastMode ? "broadcast" : "exclusive",
           skillFilter: roomConfig?.skills,
           onModelSelected,
         },
