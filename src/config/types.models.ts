@@ -73,4 +73,10 @@ export type ModelsConfig = {
   mode?: "merge" | "replace";
   providers?: Record<string, ModelProviderConfig>;
   bedrockDiscovery?: BedrockDiscoveryConfig;
+  /**
+   * Maximum delay in milliseconds to wait for a retry when the server requests a long wait.
+   * If the server's requested delay exceeds this value, the request fails immediately.
+   * Default: 60000 (60 seconds). Set to 0 to disable the cap.
+   */
+  maxRetryDelayMs?: number;
 };

@@ -256,6 +256,7 @@ export const ModelsConfigSchema = z
     mode: z.union([z.literal("merge"), z.literal("replace")]).optional(),
     providers: z.record(z.string(), ModelProviderSchema).optional(),
     bedrockDiscovery: BedrockDiscoverySchema,
+    maxRetryDelayMs: z.number().int().min(0).default(60000),
   })
   .strict()
   .optional();
