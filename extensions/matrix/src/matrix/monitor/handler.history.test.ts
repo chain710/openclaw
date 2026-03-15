@@ -4,6 +4,16 @@ import { setMatrixRuntime } from "../../runtime.js";
 import { createMatrixRoomMessageHandler } from "./handler.js";
 import { EventType, type MatrixRawEvent } from "./types.js";
 
+vi.mock("openclaw/plugin-sdk/matrix", async (importOriginal) => {
+  const actual: any = await importOriginal();
+  return {
+    ...actual,
+    dispatchReplyFromConfigWithSettledDispatcher: vi
+      .fn()
+      .mockResolvedValue({ queuedFinal: true, counts: { final: 1 } }),
+  };
+});
+
 describe("createMatrixRoomMessageHandler history", () => {
   let mockCore: any;
   let mockLogger: any;

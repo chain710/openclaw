@@ -179,20 +179,24 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
         eventType === EventType.Location ||
         (eventType === EventType.RoomMessage && locationContent.msgtype === EventType.Location);
       if (eventType !== EventType.RoomMessage && !isPollEvent && !isLocationEvent) {
+        logVerboseMessage(`matrix: drop room=${roomId} type=${eventType} reason=not-message-event`);
         return;
       }
       logVerboseMessage(
         `matrix: room.message recv room=${roomId} type=${eventType} id=${event.event_id ?? "unknown"}`,
       );
       if (event.unsigned?.redacted_because) {
+        logVerboseMessage(`matrix: drop room=${roomId} type=${eventType} reason=redacted`);
         return;
       }
       const senderId = event.sender;
       if (!senderId) {
+        logVerboseMessage(`matrix: drop room=${roomId} type=${eventType} reason=no-sender`);
         return;
       }
       const selfUserId = await client.getUserId();
       if (senderId === selfUserId) {
+        logVerboseMessage(`matrix: drop room=${roomId} type=${eventType} reason=self-message`);
         return;
       }
       const eventTs = event.origin_server_ts;
@@ -328,6 +332,7 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
           logVerboseMessage,
         });
         if (!allowedDirectMessage) {
+          logVerboseMessage(`matrix: drop room=${roomId} reason=dm-access-denied`);
           return;
         }
       }
@@ -367,6 +372,10 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
 
       const rawBody =
         locationPayload?.text ?? (typeof content.body === "string" ? content.body.trim() : "");
+      if (!rawBody && !media) {
+        logVerboseMessage(`matrix: drop room=${roomId} reason=empty-body`);
+        return;
+      }
       let media: {
         path: string;
         contentType?: string;
@@ -784,12 +793,17 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
           });
         },
       });
+      let accumulatedBlockText = "";
+
       const { dispatcher, replyOptions, markDispatchIdle } =
         core.channel.reply.createReplyDispatcherWithTyping({
           ...prefixOptions,
           humanDelay,
           typingCallbacks,
           deliver: async (payload) => {
+            if (payload.text) {
+              accumulatedBlockText += payload.text;
+            }
             await deliverMatrixReplies({
               replies: [payload],
               roomId,
@@ -802,11 +816,26 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
               tableMode,
             });
             didSendReply = true;
+            // Matrix servers often clear typing status after a message is sent.
+            // Re-signal typing immediately if we're still in the middle of a run.
+            if (typingCallbacks?.onReplyStart) {
+              await typingCallbacks.onReplyStart();
+            }
           },
           onError: (err, info) => {
             runtime.error?.(`matrix ${info.kind} reply failed: ${String(err)}`);
           },
         });
+
+      const channelCfg = cfg.channels?.matrix;
+      const accountCfg =
+        resolvedAccountId !== "default" ? channelCfg?.accounts?.[resolvedAccountId] : undefined;
+      const effectiveBlockStreaming = accountCfg?.blockStreaming ?? channelCfg?.blockStreaming;
+
+      const disableBlockStreaming =
+        typeof effectiveBlockStreaming === "boolean" ? !effectiveBlockStreaming : undefined;
+
+      const historySnapshotCount = groupHistories.get(historyKey)?.length ?? 0;
 
       const { queuedFinal, counts } = await dispatchReplyFromConfigWithSettledDispatcher({
         cfg,
@@ -819,8 +848,23 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
           ...replyOptions,
           skillFilter: roomConfig?.skills,
           onModelSelected,
+          disableBlockStreaming,
         },
       });
+
+      if (accumulatedBlockText.trim() && finalHistoryLimit > 0) {
+        recordPendingHistoryEntryIfEnabled({
+          historyMap: groupHistories,
+          historyKey,
+          limit: finalHistoryLimit,
+          entry: {
+            role: "assistant",
+            content: accumulatedBlockText.trim(),
+            timestamp: Date.now(),
+          },
+        });
+      }
+
       if (!queuedFinal) {
         return;
       }
@@ -833,6 +877,7 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
           historyMap: groupHistories,
           historyKey,
           limit: finalHistoryLimit,
+          count: historySnapshotCount,
         });
       }
 

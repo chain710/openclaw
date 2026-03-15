@@ -161,15 +161,41 @@ export function clearHistoryEntries(params: {
   params.historyMap.set(params.historyKey, []);
 }
 
+export function clearHistoryEntriesCount(params: {
+  historyMap: Map<string, HistoryEntry[]>;
+  historyKey: string;
+  count: number;
+}): void {
+  if (params.count <= 0) {
+    return;
+  }
+  const entries = params.historyMap.get(params.historyKey);
+  if (entries && entries.length > 0) {
+    params.historyMap.set(params.historyKey, entries.slice(params.count));
+  }
+}
+
 export function clearHistoryEntriesIfEnabled(params: {
   historyMap: Map<string, HistoryEntry[]>;
   historyKey: string;
   limit: number;
+  count?: number;
 }): void {
   if (params.limit <= 0) {
     return;
   }
-  clearHistoryEntries({ historyMap: params.historyMap, historyKey: params.historyKey });
+  if (typeof params.count === "number") {
+    clearHistoryEntriesCount({
+      historyMap: params.historyMap,
+      historyKey: params.historyKey,
+      count: params.count,
+    });
+    return;
+  }
+  const entries = params.historyMap.get(params.historyKey);
+  if (entries && entries.length > params.limit) {
+    params.historyMap.set(params.historyKey, entries.slice(-params.limit));
+  }
 }
 
 export function buildHistoryContextFromEntries(params: {

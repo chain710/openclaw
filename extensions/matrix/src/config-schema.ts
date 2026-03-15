@@ -1,5 +1,6 @@
 import {
   AllowFromListSchema,
+  BlockStreamingCoalesceSchema,
   buildNestedDmConfigSchema,
   DmPolicySchema,
   GroupPolicySchema,
@@ -51,6 +52,8 @@ export const MatrixConfigSchema = z.object({
   threadReplies: z.enum(["off", "inbound", "always"]).optional(),
   textChunkLimit: z.number().optional(),
   chunkMode: z.enum(["length", "newline"]).optional(),
+  blockStreaming: z.boolean().optional(),
+  blockStreamingCoalesce: BlockStreamingCoalesceSchema.optional(),
   responsePrefix: z.string().optional(),
   mediaMaxMb: z.number().optional(),
   autoJoin: z.enum(["always", "allowlist", "off"]).optional(),
