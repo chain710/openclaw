@@ -228,6 +228,7 @@ export function createReplyDispatcherWithTyping(
   const dispatcher = createReplyDispatcher({
     ...dispatcherOptions,
     onIdle: () => {
+      console.error(`[Dispatcher] onIdle: queue empty, calling markDispatchIdle`);
       typingController?.markDispatchIdle();
       resolvedOnIdle?.();
     },

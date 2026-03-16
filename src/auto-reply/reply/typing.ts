@@ -58,6 +58,9 @@ export function createTypingController(params: {
     if (sealed) {
       return;
     }
+    log?.(
+      `[Typing:Controller] cleanup: sealing controller (active=${active}, runComplete=${runComplete}, dispatchIdle=${dispatchIdle})`,
+    );
     if (typingTtlTimer) {
       clearTimeout(typingTtlTimer);
       typingTtlTimer = undefined;
@@ -93,6 +96,7 @@ export function createTypingController(params: {
       if (!typingLoop.isRunning()) {
         return;
       }
+      log?.(`[Typing:Controller] TTL reached (${formatTypingTtl(typingTtlMs)}); auto-cleaning`);
       log?.(`typing TTL reached (${formatTypingTtl(typingTtlMs)}); stopping typing indicator`);
       cleanup();
     }, typingTtlMs);
@@ -107,6 +111,7 @@ export function createTypingController(params: {
   });
 
   const triggerTyping = async () => {
+    log?.(`[Typing:Controller] triggerTyping: calling underlying onReplyStart`);
     await startGuard.run(async () => {
       await onReplyStart?.();
     });
@@ -119,18 +124,22 @@ export function createTypingController(params: {
 
   const ensureStart = async () => {
     if (sealed) {
+      log?.(`[Typing:Controller] ensureStart: skipped (sealed=true)`);
       return;
     }
     // Late callbacks after a run completed should never restart typing.
     if (runComplete) {
+      log?.(`[Typing:Controller] ensureStart: skipped (runComplete=true)`);
       return;
     }
     if (!active) {
       active = true;
     }
     if (started) {
+      log?.(`[Typing:Controller] ensureStart: already started`);
       return;
     }
+    log?.(`[Typing:Controller] ensureStart: triggering initial typing`);
     started = true;
     await triggerTyping();
   };
@@ -141,6 +150,7 @@ export function createTypingController(params: {
     }
     // Stop only when the model run is done and the dispatcher queue is empty.
     if (runComplete && dispatchIdle) {
+      log?.(`[Typing:Controller] maybeStopOnIdle: conditions met, cleaning up`);
       cleanup();
     }
   };
@@ -161,6 +171,7 @@ export function createTypingController(params: {
     if (typingLoop.isRunning()) {
       return;
     }
+    log?.(`[Typing:Controller] startTypingLoop: starting 6s keepalive loop`);
     await ensureStart();
     typingLoop.start();
   };
@@ -179,6 +190,7 @@ export function createTypingController(params: {
     ) {
       return;
     }
+    log?.(`[Typing:Controller] startTypingOnText: text arrived, ensuring loop`);
     refreshTypingTtl();
     await startTypingLoop();
   };
@@ -187,11 +199,15 @@ export function createTypingController(params: {
   const DISPATCH_IDLE_GRACE_MS = 10_000;
 
   const markRunComplete = () => {
+    log?.(`[Typing:Controller] markRunComplete: setting runComplete=true`);
     runComplete = true;
     maybeStopOnIdle();
     if (!sealed && !dispatchIdle) {
       dispatchIdleTimer = setTimeout(() => {
         if (!sealed && !dispatchIdle) {
+          log?.(
+            `[Typing:Controller] markRunComplete: DISPATCH_IDLE_GRACE_MS reached, forcing cleanup`,
+          );
           log?.("typing: dispatch idle not received after run complete; forcing cleanup");
           cleanup();
         }
@@ -200,6 +216,7 @@ export function createTypingController(params: {
   };
 
   const markDispatchIdle = () => {
+    log?.(`[Typing:Controller] markDispatchIdle: setting dispatchIdle=true`);
     dispatchIdle = true;
     if (dispatchIdleTimer) {
       clearTimeout(dispatchIdleTimer);

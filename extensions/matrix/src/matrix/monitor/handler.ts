@@ -804,6 +804,7 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
             if (payload.text) {
               accumulatedBlockText += payload.text;
             }
+            logVerboseMessage(`matrix: deliver block (len=${payload.text?.length ?? 0})`);
             await deliverMatrixReplies({
               replies: [payload],
               roomId,
@@ -819,6 +820,7 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
             // Matrix servers often clear typing status after a message is sent.
             // Re-signal typing immediately if we're still in the middle of a run.
             if (typingCallbacks?.onReplyStart) {
+              logVerboseMessage(`matrix: re-triggering onReplyStart after block deliver`);
               await typingCallbacks.onReplyStart();
             }
           },

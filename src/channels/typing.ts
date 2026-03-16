@@ -70,8 +70,10 @@ export function createTypingCallbacks(params: CreateTypingCallbacksParams): Typi
 
   const onReplyStart = async () => {
     if (closed) {
+      console.error(`[Typing:Channel] onReplyStart skipped: already closed`);
       return;
     }
+    console.error(`[Typing:Channel] onReplyStart: resetting guard and restarting loop`);
     stopSent = false;
     startGuard.reset();
     keepaliveLoop.stop();
@@ -85,6 +87,7 @@ export function createTypingCallbacks(params: CreateTypingCallbacksParams): Typi
   };
 
   const fireStop = () => {
+    console.error(`[Typing:Channel] fireStop: closing typing permanent gate`);
     closed = true;
     keepaliveLoop.stop();
     clearTtlTimer(); // Clear TTL timer on normal stop
