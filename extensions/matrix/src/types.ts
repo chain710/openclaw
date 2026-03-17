@@ -81,6 +81,10 @@ export type MatrixConfig = {
   textChunkLimit?: number;
   /** Chunking mode: "length" (default) splits by size; "newline" splits on every newline. */
   chunkMode?: "length" | "newline";
+  /** Whether to stream replies in blocks. */
+  blockStreaming?: boolean;
+  /** Configuration for coalescing streamed blocks. */
+  blockStreamingCoalesce?: import("openclaw/plugin-sdk/matrix").BlockStreamingCoalesceConfig;
   /** Outbound response prefix override for this channel/account. */
   responsePrefix?: string;
   /** Max outbound media size in MB. */

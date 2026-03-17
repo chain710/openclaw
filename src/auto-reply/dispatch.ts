@@ -17,11 +17,14 @@ export type DispatchInboundResult = DispatchFromConfigResult;
 export async function withReplyDispatcher<T>(params: {
   dispatcher: ReplyDispatcher;
   run: () => Promise<T>;
+  onRunComplete?: () => void;
   onSettled?: () => void | Promise<void>;
 }): Promise<T> {
   try {
     return await params.run();
   } finally {
+    // Also signal that the run itself is complete, allowing typing to transition to idle.
+    params.onRunComplete?.();
     // Ensure dispatcher reservations are always released on every exit path.
     params.dispatcher.markComplete();
     try {
@@ -38,10 +41,12 @@ export async function dispatchInboundMessage(params: {
   dispatcher: ReplyDispatcher;
   replyOptions?: Omit<GetReplyOptions, "onToolResult" | "onBlockReply">;
   replyResolver?: typeof import("./reply.js").getReplyFromConfig;
+  onRunComplete?: () => void;
 }): Promise<DispatchInboundResult> {
   const finalized = finalizeInboundContext(params.ctx);
   return await withReplyDispatcher({
     dispatcher: params.dispatcher,
+    onRunComplete: params.onRunComplete,
     run: () =>
       dispatchReplyFromConfig({
         ctx: finalized,
@@ -60,15 +65,15 @@ export async function dispatchInboundMessageWithBufferedDispatcher(params: {
   replyOptions?: Omit<GetReplyOptions, "onToolResult" | "onBlockReply">;
   replyResolver?: typeof import("./reply.js").getReplyFromConfig;
 }): Promise<DispatchInboundResult> {
-  const { dispatcher, replyOptions, markDispatchIdle } = createReplyDispatcherWithTyping(
-    params.dispatcherOptions,
-  );
+  const { dispatcher, replyOptions, markDispatchIdle, markRunComplete } =
+    createReplyDispatcherWithTyping(params.dispatcherOptions);
   try {
     return await dispatchInboundMessage({
       ctx: params.ctx,
       cfg: params.cfg,
       dispatcher,
       replyResolver: params.replyResolver,
+      onRunComplete: markRunComplete,
       replyOptions: {
         ...params.replyOptions,
         ...replyOptions,

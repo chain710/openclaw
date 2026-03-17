@@ -291,7 +291,12 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
     }
   };
 
-  const { dispatcher, replyOptions, markDispatchIdle } = createReplyDispatcherWithTyping({
+  const {
+    dispatcher,
+    replyOptions,
+    markDispatchIdle,
+    markRunComplete: mRC,
+  } = createReplyDispatcherWithTyping({
     ...prefixOptions,
     humanDelay: resolveHumanDelayConfig(cfg, route.agentId),
     typingCallbacks,
@@ -451,6 +456,7 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
       onAssistantMessageStart: onDraftBoundary,
       onReasoningEnd: onDraftBoundary,
     },
+    onRunComplete: mRC,
   });
   await draftStream.flush();
   draftStream.stop();

@@ -26,10 +26,12 @@ export async function dispatchReplyFromConfigWithSettledDispatcher(params: {
   dispatcher: ReplyDispatcher;
   onSettled: () => void | Promise<void>;
   replyOptions?: ReplyDispatchFromConfigOptions;
+  onRunComplete?: () => void;
 }): Promise<DispatchFromConfigResult> {
   return await withReplyDispatcher({
     dispatcher: params.dispatcher,
     onSettled: params.onSettled,
+    onRunComplete: params.onRunComplete,
     run: () =>
       dispatchReplyFromConfig({
         ctx: params.ctxPayload,

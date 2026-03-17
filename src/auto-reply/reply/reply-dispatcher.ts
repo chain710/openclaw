@@ -224,12 +224,23 @@ export function createReplyDispatcherWithTyping(
   const resolvedOnReplyStart = onReplyStart ?? typingCallbacks?.onReplyStart;
   const resolvedOnIdle = onIdle ?? typingCallbacks?.onIdle;
   const resolvedOnCleanup = onCleanup ?? typingCallbacks?.onCleanup;
+
   let typingController: TypingController | undefined;
+  let runComplete = false;
+  let idleTriggered = false;
+
+  const maybeTriggerOnIdle = () => {
+    if (runComplete && !idleTriggered) {
+      idleTriggered = true;
+      resolvedOnIdle?.();
+    }
+  };
+
   const dispatcher = createReplyDispatcher({
     ...dispatcherOptions,
     onIdle: () => {
       typingController?.markDispatchIdle();
-      resolvedOnIdle?.();
+      maybeTriggerOnIdle();
     },
   });
 
@@ -244,10 +255,12 @@ export function createReplyDispatcherWithTyping(
     },
     markDispatchIdle: () => {
       typingController?.markDispatchIdle();
-      resolvedOnIdle?.();
+      maybeTriggerOnIdle();
     },
     markRunComplete: () => {
+      runComplete = true;
       typingController?.markRunComplete();
+      maybeTriggerOnIdle();
     },
   };
 }

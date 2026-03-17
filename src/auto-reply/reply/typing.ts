@@ -29,7 +29,6 @@ export function createTypingController(params: {
     silentToken = SILENT_REPLY_TOKEN,
     log,
   } = params;
-  let started = false;
   let active = false;
   let runComplete = false;
   let dispatchIdle = false;
@@ -48,7 +47,6 @@ export function createTypingController(params: {
   };
 
   const resetCycle = () => {
-    started = false;
     active = false;
     runComplete = false;
     dispatchIdle = false;
@@ -102,7 +100,7 @@ export function createTypingController(params: {
 
   const startGuard = createTypingStartGuard({
     isSealed: () => sealed,
-    shouldBlock: () => runComplete,
+    shouldBlock: () => runComplete && dispatchIdle,
     rethrowOnError: true,
   });
 
@@ -121,17 +119,9 @@ export function createTypingController(params: {
     if (sealed) {
       return;
     }
-    // Late callbacks after a run completed should never restart typing.
-    if (runComplete) {
-      return;
-    }
     if (!active) {
       active = true;
     }
-    if (started) {
-      return;
-    }
-    started = true;
     await triggerTyping();
   };
 

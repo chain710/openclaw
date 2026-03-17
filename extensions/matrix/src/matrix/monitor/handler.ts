@@ -180,20 +180,24 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
         eventType === EventType.Location ||
         (eventType === EventType.RoomMessage && locationContent.msgtype === EventType.Location);
       if (eventType !== EventType.RoomMessage && !isPollEvent && !isLocationEvent) {
+        logVerboseMessage(`matrix: drop room=${roomId} type=${eventType} reason=not-message-event`);
         return;
       }
       logVerboseMessage(
         `matrix: room.message recv room=${roomId} type=${eventType} id=${event.event_id ?? "unknown"}`,
       );
       if (event.unsigned?.redacted_because) {
+        logVerboseMessage(`matrix: drop room=${roomId} type=${eventType} reason=redacted`);
         return;
       }
       const senderId = event.sender;
       if (!senderId) {
+        logVerboseMessage(`matrix: drop room=${roomId} type=${eventType} reason=no-sender`);
         return;
       }
       const selfUserId = await client.getUserId();
       if (senderId === selfUserId) {
+        logVerboseMessage(`matrix: drop room=${roomId} type=${eventType} reason=self-message`);
         return;
       }
       const eventTs = event.origin_server_ts;
@@ -329,6 +333,7 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
           logVerboseMessage,
         });
         if (!allowedDirectMessage) {
+          logVerboseMessage(`matrix: drop room=${roomId} reason=dm-access-denied`);
           return;
         }
       }
@@ -380,6 +385,10 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
           ? content.file
           : undefined;
       const mediaUrl = contentUrl ?? contentFile?.url;
+      if (!rawBody && !mediaUrl) {
+        logVerboseMessage(`matrix: drop room=${roomId} reason=empty-body`);
+        return;
+      }
 
       if (!isHistorical && (rawBody || mediaUrl)) {
         const contentInfo =
@@ -787,32 +796,50 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
       });
       let accumulatedBlockText = "";
 
-      const { dispatcher, replyOptions, markDispatchIdle } =
-        core.channel.reply.createReplyDispatcherWithTyping({
-          ...prefixOptions,
-          humanDelay,
-          typingCallbacks,
-          deliver: async (payload) => {
-            if (payload.text) {
-              accumulatedBlockText += payload.text;
-            }
-            await deliverMatrixReplies({
-              replies: [payload],
-              roomId,
-              client,
-              runtime,
-              textLimit,
-              replyToMode,
-              threadId: threadTarget,
-              accountId: route.accountId,
-              tableMode,
-            });
-            didSendReply = true;
-          },
-          onError: (err, info) => {
-            runtime.error?.(`matrix ${info.kind} reply failed: ${String(err)}`);
-          },
-        });
+      const {
+        dispatcher,
+        replyOptions,
+        markDispatchIdle,
+        markRunComplete: markTypingRunComplete,
+      } = core.channel.reply.createReplyDispatcherWithTyping({
+        ...prefixOptions,
+        humanDelay,
+        typingCallbacks,
+        deliver: async (payload) => {
+          if (payload.text) {
+            accumulatedBlockText += payload.text;
+          }
+          await deliverMatrixReplies({
+            replies: [payload],
+            roomId,
+            client,
+            runtime,
+            textLimit,
+            replyToMode,
+            threadId: threadTarget,
+            accountId: route.accountId,
+            tableMode,
+          });
+          didSendReply = true;
+          // Matrix servers clear typing status after each message delivery.
+          // Wait briefly for the server to finish processing before re-signaling typing.
+          if (typingCallbacks?.onReplyStart) {
+            setTimeout(() => {
+              void typingCallbacks.onReplyStart();
+            }, 1000);
+          }
+        },
+        onError: (err, info) => {
+          runtime.error?.(`matrix ${info.kind} reply failed: ${String(err)}`);
+        },
+      });
+
+      const channelCfg = cfg.channels?.matrix;
+      const accountCfg =
+        resolvedAccountId !== "default" ? channelCfg?.accounts?.[resolvedAccountId] : undefined;
+      const effectiveBlockStreaming = accountCfg?.blockStreaming ?? channelCfg?.blockStreaming;
+      const disableBlockStreaming =
+        typeof effectiveBlockStreaming === "boolean" ? !effectiveBlockStreaming : undefined;
 
       // Snapshot the current history length before dispatch so concurrent messages
       // arriving during the run are not cleared along with the triggering message.
@@ -825,10 +852,12 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
         onSettled: () => {
           markDispatchIdle();
         },
+        onRunComplete: markTypingRunComplete,
         replyOptions: {
           ...replyOptions,
           skillFilter: roomConfig?.skills,
           onModelSelected,
+          disableBlockStreaming,
         },
       });
 
