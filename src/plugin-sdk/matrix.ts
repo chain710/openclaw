@@ -116,6 +116,7 @@ export {
 export {
   buildPendingHistoryContextFromMap,
   clearHistoryEntriesIfEnabled,
+  trimHistoryEntries,
   DEFAULT_GROUP_HISTORY_LIMIT,
   recordPendingHistoryEntryIfEnabled,
   type HistoryEntry,

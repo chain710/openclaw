@@ -4,6 +4,7 @@ import {
   DEFAULT_GROUP_HISTORY_LIMIT,
   buildPendingHistoryContextFromMap,
   clearHistoryEntriesIfEnabled,
+  trimHistoryEntries,
   createScopedPairingAccess,
   createReplyPrefixOptions,
   createTypingCallbacks,
@@ -784,12 +785,17 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
           });
         },
       });
+      let accumulatedBlockText = "";
+
       const { dispatcher, replyOptions, markDispatchIdle } =
         core.channel.reply.createReplyDispatcherWithTyping({
           ...prefixOptions,
           humanDelay,
           typingCallbacks,
           deliver: async (payload) => {
+            if (payload.text) {
+              accumulatedBlockText += payload.text;
+            }
             await deliverMatrixReplies({
               replies: [payload],
               roomId,
@@ -808,6 +814,10 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
           },
         });
 
+      // Snapshot the current history length before dispatch so concurrent messages
+      // arriving during the run are not cleared along with the triggering message.
+      const historySnapshotCount = groupHistories.get(historyKey)?.length ?? 0;
+
       const { queuedFinal, counts } = await dispatchReplyFromConfigWithSettledDispatcher({
         cfg,
         ctxPayload,
@@ -821,6 +831,22 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
           onModelSelected,
         },
       });
+
+      let assistantCount = 0;
+      if (accumulatedBlockText.trim() && finalHistoryLimit > 0) {
+        recordPendingHistoryEntryIfEnabled({
+          historyMap: groupHistories,
+          historyKey,
+          limit: finalHistoryLimit,
+          entry: {
+            role: "assistant",
+            content: accumulatedBlockText.trim(),
+            timestamp: Date.now(),
+          },
+        });
+        assistantCount = 1;
+      }
+
       if (!queuedFinal) {
         return;
       }
@@ -829,10 +855,12 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
 
       if (isRoom && finalHistoryLimit > 0) {
         logger.debug(`matrix: clearing history after successful reply room=${roomId}`);
-        clearHistoryEntriesIfEnabled({
+        trimHistoryEntries({
           historyMap: groupHistories,
           historyKey,
           limit: finalHistoryLimit,
+          count: historySnapshotCount,
+          assistantCount,
         });
       }
 

@@ -161,6 +161,33 @@ export function clearHistoryEntries(params: {
   params.historyMap.set(params.historyKey, []);
 }
 
+export function trimHistoryEntries(params: {
+  historyMap: Map<string, HistoryEntry[]>;
+  historyKey: string;
+  limit: number;
+  count: number;
+  assistantCount?: number;
+}): void {
+  if (params.limit <= 0) {
+    return;
+  }
+  if (params.count <= 0 && !params.assistantCount) {
+    return;
+  }
+  const entries = params.historyMap.get(params.historyKey);
+  if (entries && entries.length > 0) {
+    let result = entries;
+    if (params.count > 0) {
+      result = result.slice(params.count);
+    }
+    if (params.assistantCount && params.assistantCount > 0) {
+      // Remove the last N assistant replies that were recorded after the snapshot
+      result = result.slice(0, -params.assistantCount);
+    }
+    params.historyMap.set(params.historyKey, result);
+  }
+}
+
 export function clearHistoryEntriesIfEnabled(params: {
   historyMap: Map<string, HistoryEntry[]>;
   historyKey: string;
