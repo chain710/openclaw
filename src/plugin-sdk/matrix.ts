@@ -83,7 +83,8 @@ export {
 } from "../config/types.secrets.js";
 export { buildSecretInputSchema } from "./secret-input-schema.js";
 export { ToolPolicySchema } from "../config/zod-schema.agent-runtime.js";
-export { MarkdownConfigSchema } from "../config/zod-schema.core.js";
+export { BlockStreamingCoalesceSchema, MarkdownConfigSchema } from "../config/zod-schema.core.js";
+export type { BlockStreamingCoalesceConfig } from "../config/types.base.js";
 export { fetchWithSsrFGuard } from "../infra/net/fetch-guard.js";
 export { issuePairingChallenge } from "../pairing/pairing-challenge.js";
 export { emptyPluginConfigSchema } from "../plugins/config-schema.js";
