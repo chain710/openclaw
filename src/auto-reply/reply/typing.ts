@@ -53,7 +53,11 @@ export function createTypingController(params: {
   };
 
   const cleanup = () => {
+    log?.(
+      `[typing:ctrl] cleanup called sealed=${sealed} active=${active} runComplete=${runComplete} dispatchIdle=${dispatchIdle} loopRunning=${typingLoop.isRunning()}`,
+    );
     if (sealed) {
+      log?.(`[typing:ctrl] cleanup skipped (already sealed)`);
       return;
     }
     if (typingTtlTimer) {
@@ -68,10 +72,12 @@ export function createTypingController(params: {
     // Notify the channel to stop its typing indicator (e.g., on NO_REPLY).
     // This fires only once (sealed prevents re-entry).
     if (active) {
+      log?.(`[typing:ctrl] cleanup: firing onCleanup (active=true)`);
       onCleanup?.();
     }
     resetCycle();
     sealed = true;
+    log?.(`[typing:ctrl] cleanup done; controller sealed`);
   };
 
   const refreshTypingTtl = () => {
@@ -105,9 +111,13 @@ export function createTypingController(params: {
   });
 
   const triggerTyping = async () => {
-    await startGuard.run(async () => {
+    log?.(
+      `[typing:ctrl] triggerTyping sealed=${sealed} runComplete=${runComplete} dispatchIdle=${dispatchIdle} active=${active}`,
+    );
+    const result = await startGuard.run(async () => {
       await onReplyStart?.();
     });
+    log?.(`[typing:ctrl] triggerTyping result=${result} tripped=${startGuard.isTripped()}`);
   };
 
   const typingLoop = createTypingKeepaliveLoop({
@@ -116,7 +126,11 @@ export function createTypingController(params: {
   });
 
   const ensureStart = async () => {
+    log?.(
+      `[typing:ctrl] ensureStart sealed=${sealed} active=${active} runComplete=${runComplete} dispatchIdle=${dispatchIdle}`,
+    );
     if (sealed) {
+      log?.(`[typing:ctrl] ensureStart skipped (sealed=true)`);
       return;
     }
     if (!active) {
@@ -136,10 +150,15 @@ export function createTypingController(params: {
   };
 
   const startTypingLoop = async () => {
+    log?.(
+      `[typing:ctrl] startTypingLoop sealed=${sealed} runComplete=${runComplete} loopRunning=${typingLoop.isRunning()}`,
+    );
     if (sealed) {
+      log?.(`[typing:ctrl] startTypingLoop skipped (sealed=true)`);
       return;
     }
     if (runComplete) {
+      log?.(`[typing:ctrl] startTypingLoop skipped (runComplete=true)`);
       return;
     }
     // Always refresh TTL when called, even if loop already running.
@@ -149,9 +168,11 @@ export function createTypingController(params: {
       return;
     }
     if (typingLoop.isRunning()) {
+      log?.(`[typing:ctrl] startTypingLoop: loop already running, TTL refreshed only`);
       return;
     }
     await ensureStart();
+    log?.(`[typing:ctrl] startTypingLoop: starting 6s keepalive loop`);
     typingLoop.start();
   };
 
@@ -177,9 +198,15 @@ export function createTypingController(params: {
   const DISPATCH_IDLE_GRACE_MS = 10_000;
 
   const markRunComplete = () => {
+    log?.(
+      `[typing:ctrl] markRunComplete called sealed=${sealed} dispatchIdle=${dispatchIdle} loopRunning=${typingLoop.isRunning()}`,
+    );
     runComplete = true;
     maybeStopOnIdle();
     if (!sealed && !dispatchIdle) {
+      log?.(
+        `[typing:ctrl] markRunComplete: dispatchIdle not yet received; arming ${DISPATCH_IDLE_GRACE_MS}ms grace timer`,
+      );
       dispatchIdleTimer = setTimeout(() => {
         if (!sealed && !dispatchIdle) {
           log?.("typing: dispatch idle not received after run complete; forcing cleanup");
@@ -190,6 +217,9 @@ export function createTypingController(params: {
   };
 
   const markDispatchIdle = () => {
+    log?.(
+      `[typing:ctrl] markDispatchIdle called sealed=${sealed} runComplete=${runComplete} active=${active}`,
+    );
     dispatchIdle = true;
     if (dispatchIdleTimer) {
       clearTimeout(dispatchIdleTimer);

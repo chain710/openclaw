@@ -18,6 +18,8 @@ export type CreateTypingCallbacksParams = {
   maxConsecutiveFailures?: number;
   /** Maximum duration for typing indicator before auto-cleanup (safety TTL). Default: 60s */
   maxDurationMs?: number;
+  /** Optional debug logger (receives debug-level messages). */
+  log?: (message: string) => void;
 };
 
 export function createTypingCallbacks(params: CreateTypingCallbacksParams): TypingCallbacks {
@@ -34,12 +36,19 @@ export function createTypingCallbacks(params: CreateTypingCallbacksParams): Typi
     onStartError: params.onStartError,
     maxConsecutiveFailures,
     onTrip: () => {
+      params.log?.(
+        `[typing:callbacks] startGuard tripped (consecutive failures >= ${maxConsecutiveFailures}); stopping keepalive loop`,
+      );
       keepaliveLoop.stop();
     },
   });
 
   const fireStart = async (): Promise<void> => {
-    await startGuard.run(() => params.start());
+    params.log?.(
+      `[typing:callbacks] fireStart called closed=${closed} loopRunning=${keepaliveLoop.isRunning()}`,
+    );
+    const result = await startGuard.run(() => params.start());
+    params.log?.(`[typing:callbacks] fireStart result=${result} tripped=${startGuard.isTripped()}`);
   };
 
   const keepaliveLoop = createTypingKeepaliveLoop({
@@ -69,7 +78,11 @@ export function createTypingCallbacks(params: CreateTypingCallbacksParams): Typi
   };
 
   const onReplyStart = async () => {
+    params.log?.(
+      `[typing:callbacks] onReplyStart called closed=${closed} loopRunning=${keepaliveLoop.isRunning()} stopSent=${stopSent}`,
+    );
     if (closed) {
+      params.log?.(`[typing:callbacks] onReplyStart skipped (closed=true)`);
       return;
     }
     stopSent = false;
@@ -78,13 +91,22 @@ export function createTypingCallbacks(params: CreateTypingCallbacksParams): Typi
     clearTtlTimer();
     await fireStart();
     if (startGuard.isTripped()) {
+      params.log?.(
+        `[typing:callbacks] onReplyStart: guard tripped after fireStart; keepalive NOT restarted`,
+      );
       return;
     }
+    params.log?.(
+      `[typing:callbacks] onReplyStart: restarting keepalive loop (intervalMs=${keepaliveIntervalMs})`,
+    );
     keepaliveLoop.start();
     startTtlTimer(); // Start TTL safety timer
   };
 
   const fireStop = () => {
+    params.log?.(
+      `[typing:callbacks] fireStop called closed=${closed} stopSent=${stopSent} loopRunning=${keepaliveLoop.isRunning()}`,
+    );
     closed = true;
     keepaliveLoop.stop();
     clearTtlTimer(); // Clear TTL timer on normal stop

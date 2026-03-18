@@ -773,8 +773,14 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
       });
       const humanDelay = core.channel.reply.resolveHumanDelayConfig(cfg, route.agentId);
       const typingCallbacks = createTypingCallbacks({
-        start: () => sendTypingMatrix(roomId, true, undefined, client),
-        stop: () => sendTypingMatrix(roomId, false, undefined, client),
+        start: () => {
+          logVerboseMessage(`[typing:matrix] setTyping(true) room=${roomId}`);
+          return sendTypingMatrix(roomId, true, undefined, client);
+        },
+        stop: () => {
+          logVerboseMessage(`[typing:matrix] setTyping(false) room=${roomId}`);
+          return sendTypingMatrix(roomId, false, undefined, client);
+        },
         onStartError: (err) => {
           logTypingFailure({
             log: logVerboseMessage,
@@ -793,6 +799,7 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
             error: err,
           });
         },
+        log: logVerboseMessage,
       });
       let accumulatedBlockText = "";
 
@@ -824,7 +831,11 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
           // Matrix servers clear typing status after each message delivery.
           // Wait briefly for the server to finish processing before re-signaling typing.
           if (typingCallbacks?.onReplyStart) {
+            logVerboseMessage(
+              `[typing:matrix] deliver: scheduling 1s re-trigger after block delivery room=${roomId}`,
+            );
             setTimeout(() => {
+              logVerboseMessage(`[typing:matrix] deliver: 1s re-trigger firing room=${roomId}`);
               void typingCallbacks.onReplyStart();
             }, 1000);
           }
