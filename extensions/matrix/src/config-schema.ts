@@ -60,4 +60,6 @@ export const MatrixConfigSchema = z.object({
   groups: z.object({}).catchall(matrixRoomSchema).optional(),
   rooms: z.object({}).catchall(matrixRoomSchema).optional(),
   actions: matrixActionSchema,
+  blockStreaming: z.boolean().optional(),
+  typingRestoreDelay: z.number().optional(),
 });

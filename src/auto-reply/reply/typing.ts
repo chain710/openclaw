@@ -102,7 +102,7 @@ export function createTypingController(params: {
 
   const startGuard = createTypingStartGuard({
     isSealed: () => sealed,
-    shouldBlock: () => runComplete,
+    shouldBlock: () => runComplete && dispatchIdle,
     rethrowOnError: true,
   });
 
@@ -121,8 +121,8 @@ export function createTypingController(params: {
     if (sealed) {
       return;
     }
-    // Late callbacks after a run completed should never restart typing.
-    if (runComplete) {
+    // Late callbacks after a task fully completed should never restart typing.
+    if (runComplete && dispatchIdle) {
       return;
     }
     if (!active) {
@@ -149,7 +149,7 @@ export function createTypingController(params: {
     if (sealed) {
       return;
     }
-    if (runComplete) {
+    if (runComplete && dispatchIdle) {
       return;
     }
     // Always refresh TTL when called, even if loop already running.

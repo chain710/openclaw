@@ -363,6 +363,8 @@ export async function monitorMatrixProvider(opts: MonitorMatrixOpts = {}): Promi
     getRoomInfo,
     getMemberDisplayName,
     accountId: opts.accountId,
+    blockStreaming: accountConfig.blockStreaming,
+    typingRestoreDelay: accountConfig.typingRestoreDelay,
   });
 
   registerMatrixMonitorEvents({

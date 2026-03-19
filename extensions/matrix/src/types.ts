@@ -97,6 +97,10 @@ export type MatrixConfig = {
   rooms?: Record<string, MatrixRoomConfig>;
   /** Per-action tool gating (default: true for all). */
   actions?: MatrixActionConfig;
+  /** Whether to stream AI responses chunk by chunk instead of waiting for the full reply. */
+  blockStreaming?: boolean;
+  /** Delay in milliseconds to restore typing status after a message is sent. Default: 500. */
+  typingRestoreDelay?: number;
 };
 
 export type CoreConfig = {

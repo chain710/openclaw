@@ -81,6 +81,8 @@ export type MatrixMonitorHandlerParams = {
   ) => Promise<{ name?: string; canonicalAlias?: string; altAliases: string[] }>;
   getMemberDisplayName: (roomId: string, userId: string) => Promise<string>;
   accountId?: string | null;
+  blockStreaming?: boolean;
+  typingRestoreDelay?: number;
 };
 
 export function resolveMatrixBaseRouteSession(params: {
@@ -158,6 +160,8 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
     getRoomInfo,
     getMemberDisplayName,
     accountId,
+    blockStreaming,
+    typingRestoreDelay,
   } = params;
   const resolvedAccountId = accountId?.trim() || DEFAULT_ACCOUNT_ID;
   const pairing = createScopedPairingAccess({
@@ -763,9 +767,16 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
         accountId: route.accountId,
       });
       const humanDelay = core.channel.reply.resolveHumanDelayConfig(cfg, route.agentId);
+      let isTypingActive = false;
       const typingCallbacks = createTypingCallbacks({
-        start: () => sendTypingMatrix(roomId, true, undefined, client),
-        stop: () => sendTypingMatrix(roomId, false, undefined, client),
+        start: async () => {
+          isTypingActive = true;
+          await sendTypingMatrix(roomId, true, undefined, client);
+        },
+        stop: async () => {
+          isTypingActive = false;
+          await sendTypingMatrix(roomId, false, undefined, client);
+        },
         onStartError: (err) => {
           logTypingFailure({
             log: logVerboseMessage,
@@ -808,6 +819,31 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
               tableMode,
             });
             didSendReply = true;
+
+            // Matrix server automatically clears typing status upon receiving a message.
+            // If the run is still active, we must immediately re-assert typing.
+            if (isTypingActive) {
+              // We use a small delay and a state toggle (false -> true) to ensure the
+              // server registers the restoration after its own automatic clearing.
+              const restoreDelay = typingRestoreDelay ?? 500;
+              setTimeout(async () => {
+                if (!isTypingActive) return;
+
+                // Force state toggle false -> true to ensure server registers it
+                await sendTypingMatrix(roomId, false, undefined, client).catch(() => {});
+                if (!isTypingActive) return;
+
+                await typingCallbacks.onReplyStart().catch((err) => {
+                  logTypingFailure({
+                    log: logVerboseMessage,
+                    channel: "matrix",
+                    action: "start",
+                    target: roomId,
+                    error: err,
+                  });
+                });
+              }, restoreDelay);
+            }
           },
           onError: (err, info) => {
             runtime.error?.(`matrix ${info.kind} reply failed: ${String(err)}`);
@@ -829,6 +865,7 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
           ...replyOptions,
           skillFilter: roomConfig?.skills,
           onModelSelected,
+          disableBlockStreaming: typeof blockStreaming === "boolean" ? !blockStreaming : undefined,
         },
       });
 
