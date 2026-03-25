@@ -1406,6 +1406,7 @@ export async function runSubagentAnnounceFlow(params: {
     const announceId = buildAnnounceIdFromChildRun({
       childSessionKey: params.childSessionKey,
       childRunId: params.childRunId,
+      outcome,
     });
 
     const childRunAlreadyWoken = isWakeContinuationRun(params.childRunId);
@@ -1417,6 +1418,7 @@ export async function runSubagentAnnounceFlow(params: {
       const wakeAnnounceId = buildAnnounceIdFromChildRun({
         childSessionKey: params.childSessionKey,
         childRunId: stripWakeRunSuffixes(params.childRunId),
+        outcome,
       });
       const woke = await wakeSubagentRunAfterDescendants({
         runId: params.childRunId,
