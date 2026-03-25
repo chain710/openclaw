@@ -28,3 +28,12 @@ export type RoomMessageEventContent = MessageEventContent & {
     "m.in_reply_to"?: { event_id?: string };
   };
 };
+
+export type HistoryEntry = {
+  sender: string;
+  body: string;
+  timestamp?: number;
+  messageId?: string;
+  role?: string;
+  content?: string;
+};

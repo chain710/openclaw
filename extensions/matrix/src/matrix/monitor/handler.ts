@@ -13,6 +13,12 @@ import {
   type RuntimeEnv,
   type RuntimeLogger,
 } from "../../runtime-api.js";
+import {
+  buildPendingHistoryContextFromMap,
+  clearHistoryEntriesIfEnabled,
+  recordPendingHistoryEntryIfEnabled,
+  trimHistoryEntries,
+} from "./history.js";
 import type { CoreConfig, MatrixRoomConfig, ReplyToMode } from "../../types.js";
 import { formatMatrixMediaUnavailableText } from "../media-text.js";
 import { fetchMatrixPollSnapshot } from "../poll-summary.js";
@@ -69,6 +75,8 @@ export type MatrixMonitorHandlerParams = {
   threadReplies: "off" | "inbound" | "always";
   dmEnabled: boolean;
   dmPolicy: "open" | "pairing" | "allowlist" | "disabled";
+  historyLimit?: number;
+  groupHistories?: Map<string, HistoryEntry[]>;
   textLimit: number;
   mediaMaxBytes: number;
   startupMs: number;
@@ -161,6 +169,8 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
     threadReplies,
     dmEnabled,
     dmPolicy,
+    historyLimit = 0,
+    groupHistories = new Map(),
     textLimit,
     mediaMaxBytes,
     startupMs,
@@ -223,6 +233,7 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
   };
 
   return async (roomId: string, event: MatrixRawEvent) => {
+    console.log("DEBUG: Handler starting for event", event.event_id);
     const eventId = typeof event.event_id === "string" ? event.event_id.trim() : "";
     let claimedInboundEvent = false;
     try {
@@ -269,17 +280,13 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
         await inboundDeduper.commitEvent({ roomId, eventId });
         claimedInboundEvent = false;
       };
-      if (dropPreStartupMessages) {
-        if (typeof eventTs === "number" && eventTs < startupMs - startupGraceMs) {
-          return;
-        }
-        if (
-          typeof eventTs !== "number" &&
-          typeof eventAge === "number" &&
-          eventAge > startupGraceMs
-        ) {
-          return;
-        }
+
+      const isHistorical =
+        (typeof eventTs === "number" && eventTs < startupMs - startupGraceMs) ||
+        (typeof eventTs !== "number" && typeof eventAge === "number" && eventAge > startupGraceMs);
+
+      if (dropPreStartupMessages && isHistorical && !historyLimit) {
+        return;
       }
 
       let content = event.content as RoomMessageEventContent;
@@ -545,6 +552,18 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
         eventTs: eventTs ?? undefined,
         resolveAgentRoute: core.channel.routing.resolveAgentRoute,
       });
+
+      const historyKey = isRoom ? roomId : senderId;
+      const agentConfig = _route.agentId
+        ? ((cfg as any).agents?.list?.find((a: any) => a.id === _route.agentId) as any)
+        : undefined;
+      const agentHistoryLimit =
+        agentConfig?.groupChat?.historyLimit ??
+        ((cfg as any).agents as any)?.defaults?.groupChat?.historyLimit;
+      const finalHistoryLimit = Math.max(0, agentHistoryLimit ?? historyLimit);
+
+      const historySnapshotCount = groupHistories.get(historyKey)?.length ?? 0;
+
       const agentMentionRegexes = core.channel.mentions.buildMentionRegexes(cfg, _route.agentId);
       const { wasMentioned, hasExplicitMention } = resolveMentions({
         content,
@@ -552,6 +571,7 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
         text: mentionPrecheckText,
         mentionRegexes: agentMentionRegexes,
       });
+      console.log("DEBUG: wasMentioned=", wasMentioned, "hasExplicitMention=", hasExplicitMention, "agentRegexes=", agentMentionRegexes.length);
       if (
         isConfiguredBotSender &&
         allowBotsMode === "mentions" &&
@@ -741,9 +761,64 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
         body: textWithId,
       });
 
+      const historyEntries = groupHistories.get(historyKey) ?? [];
+      const inboundHistory =
+        isRoom && finalHistoryLimit > 0
+          ? historyEntries.map((h) => ({
+              sender: h.sender,
+              body: h.body,
+              timestamp: h.timestamp,
+            }))
+          : undefined;
+
+      if (isRoom && finalHistoryLimit > 0) {
+        logger.debug?.(
+          `matrix: recording message to buffer room=${roomId} id=${_messageId} sender=${senderId} limit=${finalHistoryLimit} agent=${_route.agentId} isHistorical=${isHistorical}`,
+        );
+        recordPendingHistoryEntryIfEnabled({
+          historyMap: groupHistories,
+          historyKey,
+          limit: finalHistoryLimit,
+          entry: {
+            body: bodyText,
+            sender: senderName,
+            timestamp: eventTs ?? undefined,
+            messageId: _messageId,
+          },
+        });
+      }
+
+      if (isHistorical) {
+        await commitInboundEventIfClaimed();
+        return;
+      }
+
+      let combinedBody = body;
+      if (isRoom && finalHistoryLimit > 0) {
+        logger.debug?.(
+          `matrix: building context with ${inboundHistory?.length ?? 0} history entries room=${roomId}`,
+        );
+        combinedBody = buildPendingHistoryContextFromMap({
+          historyMap: groupHistories,
+          historyKey,
+          limit: finalHistoryLimit,
+          currentMessage: body,
+          formatEntry: (h) =>
+            core.channel.reply.formatAgentEnvelope({
+              channel: "Matrix",
+              from: envelopeFrom,
+              timestamp: h.timestamp,
+              body:
+                h.body + (h.messageId ? `\n[matrix event id: ${h.messageId} room: ${roomId}]` : ""),
+              envelope: envelopeOptions,
+            }),
+        });
+      }
+
       const groupSystemPrompt = roomConfig?.systemPrompt?.trim() || undefined;
       const ctxPayload = core.channel.reply.finalizeInboundContext({
-        Body: body,
+        Body: combinedBody,
+        InboundHistory: inboundHistory,
         RawBody: bodyText,
         CommandBody: bodyText,
         From: isDirectMessage ? `matrix:${senderId}` : `matrix:channel:${roomId}`,
@@ -875,11 +950,15 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
           });
         },
       });
+      let accumulatedBlockText = "";
       const { dispatcher, replyOptions, markDispatchIdle, markRunComplete } =
         core.channel.reply.createReplyDispatcherWithTyping({
           ...prefixOptions,
           humanDelay: core.channel.reply.resolveHumanDelayConfig(cfg, _route.agentId),
           deliver: async (payload: ReplyPayload) => {
+            if (payload.text) {
+              accumulatedBlockText += payload.text;
+            }
             await deliverMatrixReplies({
               cfg,
               replies: [payload],
@@ -940,10 +1019,40 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
         );
         return;
       }
+
+      let assistantCount = 0;
+      if (accumulatedBlockText.trim() && finalHistoryLimit > 0) {
+        recordPendingHistoryEntryIfEnabled({
+          historyMap: groupHistories,
+          historyKey,
+          limit: finalHistoryLimit,
+          entry: {
+            role: "assistant",
+            content: accumulatedBlockText.trim(),
+            sender: envelopeFrom,
+            body: accumulatedBlockText.trim(),
+            timestamp: Date.now(),
+          },
+        });
+        assistantCount = 1;
+      }
+
       if (!queuedFinal) {
         await commitInboundEventIfClaimed();
         return;
       }
+
+      if (isRoom && finalHistoryLimit > 0) {
+        logger.debug?.(`matrix: clearing history after successful reply room=${roomId}`);
+        trimHistoryEntries({
+          historyMap: groupHistories,
+          historyKey,
+          limit: finalHistoryLimit,
+          count: historySnapshotCount,
+          assistantCount,
+        });
+      }
+
       const finalCount = counts.final;
       logVerboseMessage(
         `matrix: delivered ${finalCount} reply${finalCount === 1 ? "" : "ies"} to ${replyTarget}`,

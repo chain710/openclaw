@@ -74,6 +74,8 @@ type MatrixHandlerTestHarnessOptions = {
     onSettled?: () => void | Promise<void>;
   }) => Promise<T>;
   inboundDeduper?: MatrixMonitorHandlerParams["inboundDeduper"];
+  historyLimit?: number;
+  groupHistories?: MatrixMonitorHandlerParams["groupHistories"];
   shouldAckReaction?: () => boolean;
   enqueueSystemEvent?: (...args: unknown[]) => void;
   getRoomInfo?: MatrixMonitorHandlerParams["getRoomInfo"];
@@ -212,6 +214,8 @@ export function createMatrixHandlerTestHarness(
     threadReplies: options.threadReplies ?? "inbound",
     dmEnabled: options.dmEnabled ?? true,
     dmPolicy: options.dmPolicy ?? "open",
+    historyLimit: options.historyLimit ?? 0,
+    groupHistories: options.groupHistories ?? new Map(),
     textLimit: options.textLimit ?? 8_000,
     mediaMaxBytes: options.mediaMaxBytes ?? 10_000_000,
     startupMs: options.startupMs ?? 0,
