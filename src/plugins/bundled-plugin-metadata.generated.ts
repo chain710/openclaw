@@ -8552,6 +8552,11 @@ export const GENERATED_BUNDLED_PLUGIN_METADATA = [
               mediaMaxMb: {
                 type: "number",
               },
+              historyLimit: {
+                type: "integer",
+                minimum: 0,
+                maximum: 9007199254740991,
+              },
               autoJoin: {
                 type: "string",
                 enum: ["always", "allowlist", "off"],

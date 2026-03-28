@@ -39,6 +39,7 @@ type MatrixHandlerTestHarnessOptions = {
   dropPreStartupMessages?: boolean;
   needsRoomAliasesForConfig?: boolean;
   isDirectMessage?: boolean;
+  historyLimit?: number;
   readAllowFromStore?: MatrixMonitorHandlerParams["core"]["channel"]["pairing"]["readAllowFromStore"];
   upsertPairingRequest?: MatrixMonitorHandlerParams["core"]["channel"]["pairing"]["upsertPairingRequest"];
   buildPairingReply?: () => string;
@@ -224,6 +225,7 @@ export function createMatrixHandlerTestHarness(
     getRoomInfo: options.getRoomInfo ?? (async () => ({ altAliases: [] })),
     getMemberDisplayName: options.getMemberDisplayName ?? (async () => "sender"),
     needsRoomAliasesForConfig: options.needsRoomAliasesForConfig ?? false,
+    historyLimit: options.historyLimit ?? 0,
   });
 
   return {

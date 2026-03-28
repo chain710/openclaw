@@ -14,7 +14,12 @@ import {
   type RuntimeLogger,
 } from "../../runtime-api.js";
 import type { CoreConfig, MatrixRoomConfig, ReplyToMode } from "../../types.js";
-import { formatMatrixMediaUnavailableText } from "../media-text.js";
+import {
+  formatMatrixMediaUnavailableText,
+  formatMatrixMessageText,
+  resolveMatrixMessageAttachment,
+  resolveMatrixMessageBody,
+} from "../media-text.js";
 import { fetchMatrixPollSnapshot } from "../poll-summary.js";
 import {
   formatPollAsText,
@@ -38,6 +43,8 @@ import { resolveMentions } from "./mentions.js";
 import { handleInboundMatrixReaction } from "./reaction-events.js";
 import { deliverMatrixReplies } from "./replies.js";
 import { createMatrixReplyContextResolver } from "./reply-context.js";
+import { createRoomHistoryTracker } from "./room-history.js";
+import type { HistoryEntry } from "./room-history.js";
 import { resolveMatrixRoomConfig } from "./rooms.js";
 import { resolveMatrixInboundRoute } from "./route.js";
 import { createMatrixThreadContextResolver } from "./thread-context.js";
@@ -72,6 +79,7 @@ export type MatrixMonitorHandlerParams = {
   dmPolicy: "open" | "pairing" | "allowlist" | "disabled";
   textLimit: number;
   mediaMaxBytes: number;
+  historyLimit: number;
   startupMs: number;
   startupGraceMs: number;
   dropPreStartupMessages: boolean;
@@ -132,6 +140,29 @@ function resolveMatrixInboundBodyText(params: {
   });
 }
 
+function resolveMatrixPendingHistoryText(params: {
+  mentionPrecheckText: string;
+  content: RoomMessageEventContent;
+  mediaUrl?: string;
+}): string {
+  if (params.mentionPrecheckText) {
+    return params.mentionPrecheckText;
+  }
+  if (!params.mediaUrl) {
+    return "";
+  }
+  const body = typeof params.content.body === "string" ? params.content.body.trim() : undefined;
+  const filename =
+    typeof params.content.filename === "string" ? params.content.filename.trim() : undefined;
+  const msgtype = typeof params.content.msgtype === "string" ? params.content.msgtype : undefined;
+  return (
+    formatMatrixMessageText({
+      body: resolveMatrixMessageBody({ body, filename, msgtype }),
+      attachment: resolveMatrixMessageAttachment({ body, filename, msgtype }),
+    }) ?? ""
+  );
+}
+
 function resolveMatrixAllowBotsMode(value?: boolean | "mentions"): MatrixAllowBotsMode {
   if (value === true) {
     return "all";
@@ -164,6 +195,7 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
     dmPolicy,
     textLimit,
     mediaMaxBytes,
+    historyLimit,
     startupMs,
     startupGraceMs,
     dropPreStartupMessages,
@@ -188,6 +220,7 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
     getMemberDisplayName,
     logVerboseMessage,
   });
+  const roomHistoryTracker = createRoomHistoryTracker();
 
   const readStoreAllowFrom = async (): Promise<string[]> => {
     const now = Date.now();
@@ -529,6 +562,11 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
           ? content.file
           : undefined;
       const mediaUrl = contentUrl ?? contentFile?.url;
+      const pendingHistoryText = resolveMatrixPendingHistoryText({
+        mentionPrecheckText,
+        content,
+        mediaUrl,
+      });
       if (!mentionPrecheckText && !mediaUrl && !isPollEvent) {
         await commitInboundEventIfClaimed();
         return;
@@ -619,6 +657,16 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
         hasControlCommandInMessage;
       const canDetectMention = agentMentionRegexes.length > 0 || hasExplicitMention;
       if (isRoom && shouldRequireMention && !wasMentioned && !shouldBypassMention) {
+        // Record in room history so future triggered replies can see this message as context.
+        if (historyLimit > 0 && pendingHistoryText) {
+          const pendingEntry: HistoryEntry = {
+            // Keep skipped-message buffering non-blocking: sender name lookup can be async.
+            sender: senderId,
+            body: pendingHistoryText,
+            timestamp: eventTs ?? undefined,
+          };
+          roomHistoryTracker.recordPending(roomId, pendingEntry);
+        }
         logger.info("skipping room message", { roomId, reason: "no-mention" });
         await commitInboundEventIfClaimed();
         return;
@@ -750,6 +798,22 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
         getSessionBindingService().touch(_runtimeBindingId, eventTs ?? undefined);
       }
       const envelopeFrom = isDirectMessage ? senderName : (roomName ?? roomId);
+
+      // Group chat history: read pending history before recording this trigger, then
+      // snapshot the queue position so the watermark can advance to exactly here on reply.
+      const inboundHistory =
+        isRoom && historyLimit > 0
+          ? roomHistoryTracker.getPendingHistory(_route.agentId, roomId, historyLimit)
+          : undefined;
+      const triggerSnapshotIdx =
+        isRoom && historyLimit > 0
+          ? roomHistoryTracker.recordTrigger(roomId, {
+              sender: senderName,
+              body: bodyText,
+              timestamp: eventTs ?? undefined,
+            })
+          : -1;
+
       const textWithId = `${bodyText}\n[matrix event id: ${_messageId} room: ${roomId}]`;
       const storePath = core.channel.session.resolveStorePath(cfg.session?.store, {
         agentId: _route.agentId,
@@ -773,6 +837,7 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
         Body: body,
         RawBody: bodyText,
         CommandBody: bodyText,
+        InboundHistory: inboundHistory && inboundHistory.length > 0 ? inboundHistory : undefined,
         From: isDirectMessage ? `matrix:${senderId}` : `matrix:channel:${roomId}`,
         To: `room:${roomId}`,
         SessionKey: _route.sessionKey,
@@ -961,13 +1026,21 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
         logVerboseMessage(
           `matrix: final reply delivery failed room=${roomId} id=${_messageId}; leaving event uncommitted`,
         );
+        // Do not advance watermark — the event will be retried and should see the same history.
         return;
       }
       if (!queuedFinal && nonFinalReplyDeliveryFailed) {
         logVerboseMessage(
           `matrix: non-final reply delivery failed room=${roomId} id=${_messageId}; leaving event uncommitted`,
         );
+        // Do not advance watermark — the event will be retried.
         return;
+      }
+      // Advance the per-agent watermark now that the reply succeeded (or no reply was needed).
+      // Only advance to the snapshot position — messages added during async processing remain
+      // visible for the next trigger.
+      if (isRoom && triggerSnapshotIdx >= 0) {
+        roomHistoryTracker.consumeHistory(_route.agentId, roomId, triggerSnapshotIdx);
       }
       if (!queuedFinal) {
         await commitInboundEventIfClaimed();
