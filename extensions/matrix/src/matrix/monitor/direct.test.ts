@@ -79,7 +79,7 @@ describe("createDirectRoomTracker", () => {
     expect(client.getJoinedRoomMembers).toHaveBeenCalledWith("!room:example.org");
   });
 
-  it("does not classify 2-member rooms as DMs when the dm cache refresh succeeds", async () => {
+  it("classifies strict 2-member rooms as DMs even when the dm cache refresh succeeds", async () => {
     const client = createMockClient({ isDm: false, dmCacheAvailable: true });
     const tracker = createDirectRoomTracker(client);
 
@@ -88,7 +88,7 @@ describe("createDirectRoomTracker", () => {
         roomId: "!room:example.org",
         senderId: "@alice:example.org",
       }),
-    ).resolves.toBe(false);
+    ).resolves.toBe(true);
 
     expect(client.getJoinedRoomMembers).toHaveBeenCalledWith("!room:example.org");
   });
@@ -195,7 +195,7 @@ describe("createDirectRoomTracker", () => {
     ).resolves.toBe(false);
   });
 
-  it("does not re-enable the strict 2-member fallback after the dm cache has seeded", async () => {
+  it("keeps classifying strict 2-member rooms as DMs after the dm cache has seeded", async () => {
     const client = createMockClient({ isDm: false, dmCacheAvailable: true });
     const tracker = createDirectRoomTracker(client);
 
@@ -204,7 +204,7 @@ describe("createDirectRoomTracker", () => {
         roomId: "!room:example.org",
         senderId: "@alice:example.org",
       }),
-    ).resolves.toBe(false);
+    ).resolves.toBe(true);
 
     client.dms.update.mockResolvedValue(false);
     tracker.invalidateRoom("!room:example.org");
@@ -214,7 +214,7 @@ describe("createDirectRoomTracker", () => {
         roomId: "!room:example.org",
         senderId: "@alice:example.org",
       }),
-    ).resolves.toBe(false);
+    ).resolves.toBe(true);
   });
 
   it("re-checks room membership after invalidation when fallback membership changes", async () => {
