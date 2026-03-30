@@ -64,15 +64,16 @@ export function getPluginCliCommandDescriptors(
   }
 }
 
-export function registerPluginCliCommands(
+export async function registerPluginCliCommands(
   program: Command,
   cfg?: OpenClawConfig,
   env?: NodeJS.ProcessEnv,
   loaderOptions?: Pick<PluginLoadOptions, "pluginSdkResolution">,
-) {
+): Promise<void> {
   const { config, workspaceDir, logger, registry } = loadPluginCliRegistry(cfg, env, loaderOptions);
 
   const existingCommands = new Set(program.commands.map((cmd) => cmd.name()));
+  const pending: Promise<void>[] = [];
 
   for (const entry of registry.cliRegistrars) {
     if (entry.commands.length > 0) {
@@ -94,9 +95,11 @@ export function registerPluginCliCommands(
         logger,
       });
       if (result && typeof result.then === "function") {
-        void result.catch((err) => {
-          log.warn(`plugin CLI register failed (${entry.pluginId}): ${String(err)}`);
-        });
+        pending.push(
+          result.catch((err) => {
+            log.warn(`plugin CLI register failed (${entry.pluginId}): ${String(err)}`);
+          }),
+        );
       }
       for (const command of entry.commands) {
         existingCommands.add(command);
@@ -104,5 +107,9 @@ export function registerPluginCliCommands(
     } catch (err) {
       log.warn(`plugin CLI register failed (${entry.pluginId}): ${String(err)}`);
     }
+  }
+
+  if (pending.length > 0) {
+    await Promise.all(pending);
   }
 }

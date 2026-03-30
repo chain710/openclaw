@@ -89,13 +89,13 @@ function expectCliRegistrarCalledWithConfig(config: OpenClawConfig) {
   );
 }
 
-function runRegisterPluginCliCommands(params: {
+async function runRegisterPluginCliCommands(params: {
   existingCommandName?: string;
   config: OpenClawConfig;
   env?: NodeJS.ProcessEnv;
 }) {
   const program = createProgram(params.existingCommandName);
-  registerPluginCliCommands(program, params.config, params.env);
+  await registerPluginCliCommands(program, params.config, params.env);
   return program;
 }
 
@@ -109,8 +109,8 @@ describe("registerPluginCliCommands", () => {
     mocks.applyPluginAutoEnable.mockImplementation(({ config }) => ({ config, changes: [] }));
   });
 
-  it("skips plugin CLI registrars when commands already exist", () => {
-    runRegisterPluginCliCommands({
+  it("skips plugin CLI registrars when commands already exist", async () => {
+    await runRegisterPluginCliCommands({
       existingCommandName: "memory",
       config: {} as OpenClawConfig,
     });
@@ -119,10 +119,10 @@ describe("registerPluginCliCommands", () => {
     expect(mocks.otherRegister).toHaveBeenCalledTimes(1);
   });
 
-  it("forwards an explicit env to plugin loading", () => {
+  it("forwards an explicit env to plugin loading", async () => {
     const env = { OPENCLAW_HOME: "/srv/openclaw-home" } as NodeJS.ProcessEnv;
 
-    runRegisterPluginCliCommands({
+    await runRegisterPluginCliCommands({
       config: {} as OpenClawConfig,
       env,
     });
@@ -134,11 +134,11 @@ describe("registerPluginCliCommands", () => {
     );
   });
 
-  it("loads plugin CLI commands from the auto-enabled config snapshot", () => {
+  it("loads plugin CLI commands from the auto-enabled config snapshot", async () => {
     const { rawConfig, autoEnabledConfig } = createAutoEnabledCliFixture();
     mocks.applyPluginAutoEnable.mockReturnValue({ config: autoEnabledConfig, changes: [] });
 
-    runRegisterPluginCliCommands({
+    await runRegisterPluginCliCommands({
       config: rawConfig,
     });
 

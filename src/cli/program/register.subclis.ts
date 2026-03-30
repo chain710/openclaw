@@ -228,7 +228,7 @@ const entries: SubCliEntry[] = [
       const { registerPluginCliCommands } = await import("../../plugins/cli.js");
       const config = await loadValidatedConfigForPluginRegistration();
       if (config) {
-        registerPluginCliCommands(program, config);
+        await registerPluginCliCommands(program, config);
       }
       const mod = await import("../pairing-cli.js");
       mod.registerPairingCli(program);
@@ -244,7 +244,7 @@ const entries: SubCliEntry[] = [
       const { registerPluginCliCommands } = await import("../../plugins/cli.js");
       const config = await loadValidatedConfigForPluginRegistration();
       if (config) {
-        registerPluginCliCommands(program, config);
+        await registerPluginCliCommands(program, config);
       }
     },
   },

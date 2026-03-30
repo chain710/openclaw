@@ -189,7 +189,7 @@ export async function runCli(argv: string[] = process.argv) {
         await import("./program/register.subclis.js");
       const config = await loadValidatedConfigForPluginRegistration();
       if (config) {
-        registerPluginCliCommands(program, config);
+        await registerPluginCliCommands(program, config);
       }
     }
 
